@@ -1,0 +1,6 @@
+{
+  "name": "FleetCommand",
+  "description": "High-fidelity, mining and logistics fleet management operations center dashboard supporting dispatching, job scheduling, active tracking, truck telemetry, driver performance, maintenance logging, fuel analytics, and role-based user profiles.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
