@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { useFleet } from '../context/FleetContext';
 import { Layout } from '../components/NavigationSidebar';
 import { 
-  Palette, RefreshCw, Layers, ShieldAlert, CheckCircle2, 
-  MapPin, Plus, Trash2, Home, HelpCircle 
+  Palette, RefreshCw, Layers, CheckCircle2, 
+  MapPin, Plus, Home, HelpCircle 
 } from 'lucide-react';
 
 export const Settings: React.FC = () => {
@@ -11,10 +11,7 @@ export const Settings: React.FC = () => {
     theme, setTheme, 
     logoText, setLogoText, 
     logoEmoji, setLogoEmoji,
-    branches, addBranch, 
-    clearTrucksData, clearDriversData, clearJobsData, clearMaintenanceData, clearFuelData, clearDispatchData,
-    resetAllData,
-    trucks, drivers, jobs, maintenance, fuelLogs, fuelRequisitions, dispatches, stockMovements
+    branches, addBranch
   } = useFleet();
 
   // Branch Form state
@@ -31,9 +28,7 @@ export const Settings: React.FC = () => {
 
   // Success indicator triggers
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
-  const [clearStatus, setClearStatus] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [pendingWipeCategory, setPendingWipeCategory] = useState<'trucks' | 'drivers' | 'jobs' | 'maintenance' | 'fuel' | 'dispatch' | 'all' | null>(null);
 
   const handleBranchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -71,19 +66,6 @@ export const Settings: React.FC = () => {
     setTimeout(() => setSaveStatus(null), 3000);
   };
 
-  const handleClear = (category: 'trucks' | 'drivers' | 'jobs' | 'maintenance' | 'fuel' | 'dispatch') => {
-    if (category === 'trucks') clearTrucksData();
-    else if (category === 'drivers') clearDriversData();
-    else if (category === 'jobs') clearJobsData();
-    else if (category === 'maintenance') clearMaintenanceData();
-    else if (category === 'fuel') clearFuelData();
-    else if (category === 'dispatch') clearDispatchData();
-
-    setPendingWipeCategory(null);
-    setClearStatus(`Cleared all ${category} database entries`);
-    setTimeout(() => setClearStatus(null), 4000);
-  };
-
   const THEMES = [
     { id: 'slate', name: 'Orange Slate', desc: 'Default mining operations theme', colors: 'from-orange-500 to-amber-500' },
     { id: 'blue', name: 'Royal Blue', desc: 'Ocean and bulk logistics dispatch', colors: 'from-blue-500 to-indigo-600' },
@@ -113,12 +95,6 @@ export const Settings: React.FC = () => {
           <div className="p-4 bg-emerald-500/10 border-l-2 border-emerald-500 rounded text-emerald-400 text-xs flex items-center gap-2 font-mono">
             <CheckCircle2 size={16} />
             {saveStatus}
-          </div>
-        )}
-        {clearStatus && (
-          <div className="p-4 bg-yellow-500/10 border-l-2 border-yellow-500 rounded text-yellow-400 text-xs flex items-center gap-2 font-mono">
-            <RefreshCw size={16} className="animate-spin" />
-            {clearStatus}
           </div>
         )}
         {errorMessage && (
@@ -318,8 +294,8 @@ export const Settings: React.FC = () => {
                           <p className="font-bold text-white font-mono truncate">{b.name}</p>
                           <p className="text-zinc-500 text-[10px] mt-0.5 font-medium">{b.locationName}</p>
                           <div className="grid grid-cols-2 gap-1 text-[9px] text-zinc-400 font-mono mt-1 border-t border-zinc-900 pt-1">
-                            <span>Lat: {b.lat.toFixed(4)}</span>
-                            <span>Lng: {b.lng.toFixed(4)}</span>
+                            <span>Lat: {Number(b.lat).toFixed(4)}</span>
+                            <span>Lng: {Number(b.lng).toFixed(4)}</span>
                           </div>
                           {b.manager && (
                             <p className="text-[10px] text-orange-400/80 mt-1">Mgr: {b.manager}</p>
@@ -330,265 +306,6 @@ export const Settings: React.FC = () => {
                   )}
                 </div>
               </div>
-            </div>
-          </div>
-
-          {/* DUSTBIN SAFETY: INDIVIDUAL DATA WIPERS */}
-          <div className="bg-[#101424] border border-zinc-800/80 rounded-xl p-6 space-y-4 lg:col-span-2">
-            <div className="flex items-center gap-2 border-b border-zinc-800 pb-3">
-              <ShieldAlert size={18} className="text-yellow-600" />
-              <h3 className="text-sm font-bold uppercase tracking-wider text-zinc-300 font-mono">System Database Wipers</h3>
-            </div>
-
-            <p className="text-xs text-zinc-500">
-              Clear individual database slices back to a clean slate. Wiping operations will erase selected files from browser storage.
-            </p>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
-              {pendingWipeCategory === 'trucks' ? (
-                <div className="p-3 bg-red-950/30 border border-red-500 rounded-lg text-xs space-y-2 flex flex-col justify-between">
-                  <div>
-                    <p className="text-[10px] text-red-400 font-mono font-bold uppercase">Wipe all trucks?</p>
-                    <p className="text-[9px] text-zinc-500 mt-1">Clears all assets from ledger.</p>
-                  </div>
-                  <div className="flex gap-1.5 mt-2">
-                    <button
-                      onClick={() => handleClear('trucks')}
-                      className="flex-1 py-1 bg-red-650 hover:bg-red-600 text-white font-mono text-[9px] font-bold rounded cursor-pointer text-center"
-                    >
-                      Yes
-                    </button>
-                    <button
-                      onClick={() => setPendingWipeCategory(null)}
-                      className="flex-1 py-1 bg-zinc-900 border border-zinc-850 text-zinc-400 font-mono text-[9px] font-bold rounded cursor-pointer text-center"
-                    >
-                      No
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setPendingWipeCategory('trucks')}
-                  className="p-3 bg-red-950/10 hover:bg-red-950/30 border border-red-900/30 hover:border-red-600 text-left rounded-lg text-xs transition-all cursor-pointer group"
-                >
-                  <div className="flex justify-between items-center text-red-400">
-                    <span className="font-bold font-mono">1. Fleet</span>
-                    <Trash2 size={13} className="text-red-500 group-hover:scale-110 transition-transform" />
-                  </div>
-                  <p className="text-[10px] text-zinc-500 mt-1">Deletes all trucks ({trucks.length})</p>
-                </button>
-              )}
-
-              {pendingWipeCategory === 'drivers' ? (
-                <div className="p-3 bg-red-950/30 border border-red-500 rounded-lg text-xs space-y-2 flex flex-col justify-between">
-                  <div>
-                    <p className="text-[10px] text-red-400 font-mono font-bold uppercase">Wipe all drivers?</p>
-                    <p className="text-[9px] text-zinc-500 mt-1">Clears operator registers.</p>
-                  </div>
-                  <div className="flex gap-1.5 mt-2">
-                    <button
-                      onClick={() => handleClear('drivers')}
-                      className="flex-1 py-1 bg-red-650 hover:bg-red-600 text-white font-mono text-[9px] font-bold rounded cursor-pointer text-center"
-                    >
-                      Yes
-                    </button>
-                    <button
-                      onClick={() => setPendingWipeCategory(null)}
-                      className="flex-1 py-1 bg-zinc-900 border border-zinc-850 text-zinc-400 font-mono text-[9px] font-bold rounded cursor-pointer text-center"
-                    >
-                      No
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setPendingWipeCategory('drivers')}
-                  className="p-3 bg-red-950/10 hover:bg-red-950/30 border border-red-900/30 hover:border-red-600 text-left rounded-lg text-xs transition-all cursor-pointer group"
-                >
-                  <div className="flex justify-between items-center text-red-400">
-                    <span className="font-bold font-mono">2. Drivers</span>
-                    <Trash2 size={13} className="text-red-500 group-hover:scale-110 transition-transform" />
-                  </div>
-                  <p className="text-[10px] text-zinc-500 mt-1">Removes active drivers ({drivers.length})</p>
-                </button>
-              )}
-
-              {pendingWipeCategory === 'jobs' ? (
-                <div className="p-3 bg-red-950/30 border border-red-500 rounded-lg text-xs space-y-2 flex flex-col justify-between">
-                  <div>
-                    <p className="text-[10px] text-red-400 font-mono font-bold uppercase">Wipe all jobs?</p>
-                    <p className="text-[9px] text-zinc-500 mt-1">Clears dispatcher logbook.</p>
-                  </div>
-                  <div className="flex gap-1.5 mt-2">
-                    <button
-                      onClick={() => handleClear('jobs')}
-                      className="flex-1 py-1 bg-red-650 hover:bg-red-600 text-white font-mono text-[9px] font-bold rounded cursor-pointer text-center"
-                    >
-                      Yes
-                    </button>
-                    <button
-                      onClick={() => setPendingWipeCategory(null)}
-                      className="flex-1 py-1 bg-zinc-900 border border-zinc-850 text-zinc-400 font-mono text-[9px] font-bold rounded cursor-pointer text-center"
-                    >
-                      No
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setPendingWipeCategory('jobs')}
-                  className="p-3 bg-red-950/10 hover:bg-red-950/30 border border-red-900/30 hover:border-red-600 text-left rounded-lg text-xs transition-all cursor-pointer group"
-                >
-                  <div className="flex justify-between items-center text-red-400">
-                    <span className="font-bold font-mono">3. Jobs</span>
-                    <Trash2 size={13} className="text-red-500 group-hover:scale-110 transition-transform" />
-                  </div>
-                  <p className="text-[10px] text-zinc-500 mt-1">Clears jobs manifest ({jobs.length})</p>
-                </button>
-              )}
-
-              {pendingWipeCategory === 'maintenance' ? (
-                <div className="p-3 bg-red-950/30 border border-red-500 rounded-lg text-xs space-y-2 flex flex-col justify-between">
-                  <div>
-                    <p className="text-[10px] text-red-400 font-mono font-bold uppercase">Wipe orders?</p>
-                    <p className="text-[9px] text-zinc-500 mt-1">Removes scheduled repair cards.</p>
-                  </div>
-                  <div className="flex gap-1.5 mt-2">
-                    <button
-                      onClick={() => handleClear('maintenance')}
-                      className="flex-1 py-1 bg-red-650 hover:bg-red-600 text-white font-mono text-[9px] font-bold rounded cursor-pointer text-center"
-                    >
-                      Yes
-                    </button>
-                    <button
-                      onClick={() => setPendingWipeCategory(null)}
-                      className="flex-1 py-1 bg-zinc-900 border border-zinc-850 text-zinc-400 font-mono text-[9px] font-bold rounded cursor-pointer text-center"
-                    >
-                      No
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setPendingWipeCategory('maintenance')}
-                  className="p-3 bg-red-950/10 hover:bg-red-950/30 border border-red-900/30 hover:border-red-600 text-left rounded-lg text-xs transition-all cursor-pointer group"
-                >
-                  <div className="flex justify-between items-center text-red-400">
-                    <span className="font-bold font-mono">4. Maintenance</span>
-                    <Trash2 size={13} className="text-red-500 group-hover:scale-110 transition-transform" />
-                  </div>
-                  <p className="text-[10px] text-zinc-500 mt-1">Clears workcards ({maintenance.length})</p>
-                </button>
-              )}
-
-              {pendingWipeCategory === 'fuel' ? (
-                <div className="p-3 bg-red-950/30 border border-red-500 rounded-lg text-xs space-y-2 flex flex-col justify-between">
-                  <div>
-                    <p className="text-[10px] text-red-400 font-mono font-bold uppercase">Wipe fuel?</p>
-                    <p className="text-[9px] text-zinc-500 mt-1">Clears histories and slips.</p>
-                  </div>
-                  <div className="flex gap-1.5 mt-2">
-                    <button
-                      onClick={() => handleClear('fuel')}
-                      className="flex-1 py-1 bg-red-650 hover:bg-red-600 text-white font-mono text-[9px] font-bold rounded cursor-pointer text-center"
-                    >
-                      Yes
-                    </button>
-                    <button
-                      onClick={() => setPendingWipeCategory(null)}
-                      className="flex-1 py-1 bg-zinc-900 border border-zinc-850 text-zinc-400 font-mono text-[9px] font-bold rounded cursor-pointer text-center"
-                    >
-                      No
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setPendingWipeCategory('fuel')}
-                  className="p-3 bg-red-950/10 hover:bg-red-950/30 border border-red-900/30 hover:border-red-600 text-left rounded-lg text-xs transition-all cursor-pointer group"
-                >
-                  <div className="flex justify-between items-center text-red-400">
-                    <span className="font-bold font-mono">5. Fuel</span>
-                    <Trash2 size={13} className="text-red-500 group-hover:scale-110 transition-transform" />
-                  </div>
-                  <p className="text-[10px] text-zinc-500 mt-1">Resets logs ({fuelLogs.length + fuelRequisitions.length})</p>
-                </button>
-              )}
-
-              {pendingWipeCategory === 'dispatch' ? (
-                <div className="p-3 bg-red-950/30 border border-red-500 rounded-lg text-xs space-y-2 flex flex-col justify-between">
-                  <div>
-                    <p className="text-[10px] text-red-400 font-mono font-bold uppercase">Wipe dispatch?</p>
-                    <p className="text-[9px] text-zinc-500 mt-1">Clears dispatch notes.</p>
-                  </div>
-                  <div className="flex gap-1.5 mt-2">
-                    <button
-                      onClick={() => handleClear('dispatch')}
-                      className="flex-1 py-1 bg-red-650 hover:bg-red-600 text-white font-mono text-[9px] font-bold rounded cursor-pointer text-center"
-                    >
-                      Yes
-                    </button>
-                    <button
-                      onClick={() => setPendingWipeCategory(null)}
-                      className="flex-1 py-1 bg-zinc-900 border border-zinc-850 text-zinc-400 font-mono text-[9px] font-bold rounded cursor-pointer text-center"
-                    >
-                      No
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setPendingWipeCategory('dispatch')}
-                  className="p-3 bg-red-950/10 hover:bg-red-950/30 border border-red-900/30 hover:border-red-600 text-left rounded-lg text-xs transition-all cursor-pointer group"
-                >
-                  <div className="flex justify-between items-center text-red-400">
-                    <span className="font-bold font-mono">6. Dispatch</span>
-                    <Trash2 size={13} className="text-red-500 group-hover:scale-110 transition-transform" />
-                  </div>
-                  <p className="text-[10px] text-zinc-500 mt-1">Resets entries ({dispatches.length + stockMovements.length})</p>
-                </button>
-              )}
-            </div>
-
-            <div className="pt-4 border-t border-[#1e243a] flex justify-between items-center flex-wrap gap-4">
-              <div>
-                <h4 className="text-xs font-bold text-zinc-300 font-mono">Factory Reset System</h4>
-                <p className="text-[10px] text-zinc-500 mt-0.5">Purges all operational records (fleet, drivers, jobs, logs) to initial empty lists with standard system roles.</p>
-              </div>
-              {pendingWipeCategory === 'all' ? (
-                <div className="flex items-center gap-2 p-2 bg-red-950/30 border border-red-500/30 rounded-lg">
-                  <span className="text-[10px] text-red-400 font-mono font-bold">OVERWRITE WHOLE DATABASE?</span>
-                  <button
-                    onClick={() => {
-                      resetAllData();
-                      setPendingWipeCategory(null);
-                      window.location.reload();
-                    }}
-                    className="px-3 py-1 bg-red-600 hover:bg-red-500 text-white font-mono text-[10px] font-black rounded cursor-pointer transition-all"
-                  >
-                    Yes, Reset System
-                  </button>
-                  <button
-                    onClick={() => setPendingWipeCategory(null)}
-                    className="px-2 py-1 bg-zinc-900 text-zinc-400 border border-zinc-800 font-mono text-[10px] font-bold rounded cursor-pointer transition-all"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              ) : (
-                <button
-                  onClick={() => setPendingWipeCategory('all')}
-                  className="px-4 py-2 bg-zinc-900 hover:bg-red-500/10 border border-red-650/40 hover:border-red-500 text-red-500 font-semibold text-xs rounded-lg transition-all cursor-pointer"
-                >
-                  Clear Everything & Reset
-                </button>
-              )}
             </div>
           </div>
         </div>

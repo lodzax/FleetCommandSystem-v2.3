@@ -1,0 +1,6 @@
+# FleetCommand Passenger config
+PassengerEnabled on
+PassengerAppType node
+PassengerStartupFile server/prod.cjs
+PassengerAppRoot /home/npivfupq/fleet.mineazy.co.zw
+PassengerNodejs /usr/bin/node

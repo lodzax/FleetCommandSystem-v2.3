@@ -5,7 +5,7 @@ export const INITIAL_USERS: User[] = [
     id: "6a0af25f60e8427cb4294428",
     name: "Tadiwa Magora",
     email: "tadiwamagora45x@gmail.com",
-    role: "Admin",
+    role: "Administrator",
     status: "Verified",
     memberSince: "18 May 2026",
     avatar: "",
@@ -15,7 +15,7 @@ export const INITIAL_USERS: User[] = [
     id: "user-2",
     name: "xxassasinhunterxx",
     email: "xxassasinhunterxx@gmail.com",
-    role: "Admin",
+    role: "Administrator",
     status: "Verified",
     memberSince: "20 May 2026",
     avatar: "",
@@ -25,7 +25,7 @@ export const INITIAL_USERS: User[] = [
     id: "user-3",
     name: "John Mandaza",
     email: "john.mandaza@fleetcommand.co.zw",
-    role: "Dispatch Manager",
+    role: "Manager",
     status: "Verified",
     memberSince: "22 May 2026",
     avatar: "",
@@ -35,7 +35,7 @@ export const INITIAL_USERS: User[] = [
     id: "user-4",
     name: "Sarah Gumbo",
     email: "s.gumbo@fleetcommand.co.zw",
-    role: "Fleet Manager",
+    role: "Manager",
     status: "Verified",
     memberSince: "24 May 2026",
     avatar: "",
@@ -48,6 +48,46 @@ export const INITIAL_USERS: User[] = [
     role: "Director",
     status: "Verified",
     memberSince: "26 May 2026",
+    avatar: "",
+    password: "password"
+  },
+  {
+    id: "user-6",
+    name: "Grace Sibanda",
+    email: "grace.sibanda@fleetcommand.co.zw",
+    role: "Accounts",
+    status: "Verified",
+    memberSince: "28 May 2026",
+    avatar: "",
+    password: "password"
+  },
+  {
+    id: "user-7",
+    name: "Taurai Chigumbura",
+    email: "taurai.c@fleetcommand.co.zw",
+    role: "Treasurer",
+    status: "Verified",
+    memberSince: "29 May 2026",
+    avatar: "",
+    password: "password"
+  },
+  {
+    id: "user-8",
+    name: "Simba Chikosi",
+    email: "simba.c@fleetcommand.co.zw",
+    role: "Driver",
+    status: "Verified",
+    memberSince: "22 May 2026",
+    avatar: "",
+    password: "password"
+  },
+  {
+    id: "user-9",
+    name: "Cleophas Sithole",
+    email: "cleo.sithole@fleetcommand.co.zw",
+    role: "Attendant",
+    status: "Verified",
+    memberSince: "29 May 2026",
     avatar: "",
     password: "password"
   }
@@ -67,7 +107,13 @@ export const INITIAL_TRUCKS: Truck[] = [
     driverId: "DRV-001",
     mileage: 64200,
     nextServiceMileage: 68000,
-    lastServiceDate: "2026-04-12"
+    lastServiceDate: "2026-04-12",
+    trackerImei: "861234567890101",
+    trackerModel: "EH002 GPS Vehicle Tracker",
+    trackerSimCard: "SIM-898602100123456789",
+    lastGpsUpdate: "2026-06-03T08:15:00Z",
+    trackerBattery: 85,
+    trackerSpeed: 42
   },
   {
     id: "TRK-102",
@@ -82,7 +128,13 @@ export const INITIAL_TRUCKS: Truck[] = [
     driverId: "DRV-002",
     mileage: 124500,
     nextServiceMileage: 125000,
-    lastServiceDate: "2026-05-10"
+    lastServiceDate: "2026-05-10",
+    trackerImei: "861234567890102",
+    trackerModel: "EH002 GPS Vehicle Tracker",
+    trackerSimCard: "SIM-898602100123456790",
+    lastGpsUpdate: "2026-06-03T08:30:00Z",
+    trackerBattery: 62,
+    trackerSpeed: 55
   },
   {
     id: "TRK-103",
@@ -97,7 +149,13 @@ export const INITIAL_TRUCKS: Truck[] = [
     driverId: null,
     mileage: 182000,
     nextServiceMileage: 180000, // Overdue service!
-    lastServiceDate: "2026-03-05"
+    lastServiceDate: "2026-03-05",
+    trackerImei: "861234567890103",
+    trackerModel: "EH003 GPS Vehicle Tracker",
+    trackerSimCard: "SIM-898602100123456791",
+    lastGpsUpdate: "2026-06-03T07:00:00Z",
+    trackerBattery: 24,
+    trackerSpeed: 0
   },
   {
     id: "TRK-104",
@@ -112,7 +170,13 @@ export const INITIAL_TRUCKS: Truck[] = [
     driverId: "DRV-003",
     mileage: 48900,
     nextServiceMileage: 55000,
-    lastServiceDate: "2026-05-02"
+    lastServiceDate: "2026-05-02",
+    trackerImei: "861234567890104",
+    trackerModel: "ET006 GPS Vehicle Tracker",
+    trackerSimCard: "SIM-898602100123456792",
+    lastGpsUpdate: "2026-06-03T06:45:00Z",
+    trackerBattery: 91,
+    trackerSpeed: 0
   },
   {
     id: "TRK-105",
@@ -127,7 +191,13 @@ export const INITIAL_TRUCKS: Truck[] = [
     driverId: "DRV-005",
     mileage: 198000,
     nextServiceMileage: 200000,
-    lastServiceDate: "2026-05-18"
+    lastServiceDate: "2026-05-18",
+    trackerImei: "861234567890105",
+    trackerModel: "EH002 GPS Vehicle Tracker",
+    trackerSimCard: "SIM-898602100123456793",
+    lastGpsUpdate: "2026-06-03T08:22:00Z",
+    trackerBattery: 78,
+    trackerSpeed: 0
   },
   {
     id: "TRK-106",
@@ -142,7 +212,13 @@ export const INITIAL_TRUCKS: Truck[] = [
     driverId: null,
     mileage: 32100,
     nextServiceMileage: 35000,
-    lastServiceDate: "2026-04-20"
+    lastServiceDate: "2026-04-20",
+    trackerImei: "861234567890106",
+    trackerModel: "IP67 Waterproof GPS Vehicle Tracker",
+    trackerSimCard: "SIM-898602100123456794",
+    lastGpsUpdate: "2026-06-03T05:30:00Z",
+    trackerBattery: 55,
+    trackerSpeed: 0
   },
   {
     id: "TRK-107",
@@ -472,9 +548,16 @@ export const INITIAL_REQUISITIONS: FuelRequisition[] = [
     truckId: "TRK-101",
     driverId: "DRV-001",
     litresRequested: 350,
-    estimatedCost: 7700,
+    estimatedCost: 763,
+    fuelDate: "2026-05-25",
+    fuelType: "Diesel",
+    branchId: "BR-101",
+    branchName: "Hwange Central Depot",
     dateRequested: "2026-05-25",
     status: "Approved",
+    reviewedBy: "Tadiwa Magora",
+    reviewedDate: "2026-05-25",
+    approvedBy: "Tadiwa Magora",
     approvedDate: "2026-05-25",
     purpose: "Routine haulage coal route"
   },
@@ -483,10 +566,15 @@ export const INITIAL_REQUISITIONS: FuelRequisition[] = [
     truckId: "TRK-104",
     driverId: "DRV-003",
     litresRequested: 240,
-    estimatedCost: 5280,
+    estimatedCost: 523,
+    fuelDate: "2026-05-26",
+    fuelType: "Diesel",
+    branchId: "BR-102",
+    branchName: "Bulawayo Transit Depot",
     dateRequested: "2026-05-26",
-    status: "Approved",
-    approvedDate: "2026-05-26",
+    status: "Reviewed",
+    reviewedBy: "Tadiwa Magora",
+    reviewedDate: "2026-05-26",
     purpose: "Chrome Ore dispatch Shurugwi Route"
   },
   {
@@ -494,7 +582,11 @@ export const INITIAL_REQUISITIONS: FuelRequisition[] = [
     truckId: "TRK-102",
     driverId: "DRV-002",
     litresRequested: 190,
-    estimatedCost: 4180,
+    estimatedCost: 414,
+    fuelDate: "2026-05-28",
+    fuelType: "Diesel",
+    branchId: "BR-103",
+    branchName: "Harare HQ Dispatch",
     dateRequested: "2026-05-28",
     status: "Pending",
     purpose: "Platinum Concentrate Ngezi Corridor run"

@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useFleet } from '../context/FleetContext';
-import { Shield, Key, Mail, User, Radio, ArrowRight, Lock, CheckCircle2 } from 'lucide-react';
+import { Key, Mail, User, ArrowRight, Lock, CheckCircle2 } from 'lucide-react';
+import { api, setToken } from '../api';
+import logoImg from '../../assets/logo.png';
 
 export const Auth: React.FC = () => {
   const { users, addUser, activeUser, setActiveUser } = useFleet();
@@ -8,53 +10,101 @@ export const Auth: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
-  const [role, setRole] = useState<'Director' | 'Fleet Manager' | 'Dispatch Manager' | 'Driver'>('Driver');
   
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setLoading(true);
     
+    try {
+      // Try API login first
+      const result = await api.login(email, password);
+      if (result.success && result.user) {
+        setToken(result.token);
+        setActiveUser(result.user);
+        setSuccess(`Welcome back, ${result.user.name}!`);
+        setLoading(false);
+        return;
+      }
+    } catch {
+      // API unavailable – fall back to local mockData
+    }
+
+    // Offline fallback: match against local users (plaintext)
     const matched = users.find(u => u.email.toLowerCase() === email.toLowerCase() && u.password === password);
     if (!matched) {
       setError('Invalid email or password combination.');
+      setLoading(false);
       return;
     }
     
     if (matched.status === 'Suspended') {
       setError('Your account access has been suspended by an administrator.');
+      setLoading(false);
       return;
     }
 
-    // Set active user
     setActiveUser(matched);
     setSuccess(`Welcome back, ${matched.name}!`);
+    setLoading(false);
   };
 
-  const handleSignUp = (e: React.FormEvent) => {
+  const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setLoading(true);
     
     if (!name || !email || !password) {
       setError('Please fill in all registration fields.');
+      setLoading(false);
       return;
     }
 
-    // Check if email already exists
+    // Check duplicate email locally first
     const exists = users.find(u => u.email.toLowerCase() === email.toLowerCase());
     if (exists) {
       setError('Email address is already registered in the operations center.');
+      setLoading(false);
       return;
     }
 
-    // Create pending user account
+    try {
+      // Try API signup (role is assigned by admin, default to Driver)
+      const result = await api.signup(name, email, password, 'Driver');
+      // Auto-login via API after successful signup
+      try {
+        const loginResult = await api.login(email, password);
+        if (loginResult.success && loginResult.user) {
+          setToken(loginResult.token);
+          setActiveUser(loginResult.user);
+          setLoading(false);
+          return; // App.tsx will show PendingVerification
+        }
+      } catch {
+        // Login after signup failed — stay on auth page with success message
+      }
+      setSuccess(result.message || 'Registration submitted! Pending admin approval.');
+      setName('');
+      setEmail('');
+      setPassword('');
+      setIsSignUp(false);
+      setLoading(false);
+      return;
+    } catch {
+      // API unavailable — fall back to local
+    }
+
+    const newUserId = `usr-${Date.now()}`;
     const newUser = {
+      id: newUserId,
       name,
       email,
-      role,
-      status: 'Pending' as const, // Awaiting admin approval
+      role: 'Driver' as const,
+      status: 'Pending' as const,
       memberSince: new Date().toLocaleDateString('en-US', {
         day: 'numeric',
         month: 'short',
@@ -64,19 +114,9 @@ export const Auth: React.FC = () => {
     };
 
     addUser(newUser);
-    
-    // Find newly added user to log in automatically
-    setTimeout(() => {
-      const storedUsersStr = localStorage.getItem('fc_users');
-      if (storedUsersStr) {
-        const storedUsers = JSON.parse(storedUsersStr);
-        const added = storedUsers.find((u: any) => u.email.toLowerCase() === email.toLowerCase());
-        if (added) {
-          setActiveUser(added);
-          setSuccess('Account created! Awaiting administrator validation approval.');
-        }
-      }
-    }, 150);
+    setActiveUser(newUser);
+    setLoading(false);
+    // App.tsx will now show PendingVerification
   };
 
   return (
@@ -89,10 +129,7 @@ export const Auth: React.FC = () => {
         
         {/* Brand Header */}
         <div className="text-center space-y-1.5">
-          <div className="h-10 w-10 bg-gradient-to-tr from-orange-600 to-amber-500 mx-auto rounded flex items-center justify-center text-[#0d1222] font-black text-xl shadow-lg shadow-orange-600/10">
-            🚛
-          </div>
-          <h2 className="text-lg font-black tracking-widest text-orange-500 font-mono uppercase">FLEETCOMMAND</h2>
+          <img src={logoImg} alt="Logo" className="h-12 mx-auto" />
           <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-mono">Operations Registry Portal</p>
         </div>
 
@@ -165,10 +202,10 @@ export const Auth: React.FC = () => {
 
             <button
               type="submit"
-              className="w-full py-3 bg-gradient-to-r from-orange-600 to-amber-500 hover:from-orange-500 hover:to-amber-400 text-black font-extrabold text-xs tracking-widest font-mono rounded-lg transition-all shadow-lg shadow-orange-600/10 flex items-center justify-center gap-2 cursor-pointer mt-2"
+              disabled={loading}
+              className="w-full py-3 bg-gradient-to-r from-orange-600 to-amber-500 hover:from-orange-500 hover:to-amber-400 text-black font-extrabold text-xs tracking-widest font-mono rounded-lg transition-all shadow-lg shadow-orange-600/10 flex items-center justify-center gap-2 cursor-pointer mt-2 disabled:opacity-50"
             >
-              <span>ACCESS CONTROL DESK</span>
-              <ArrowRight size={14} />
+              {loading ? <span className="animate-pulse">AUTHENTICATING...</span> : <><span>ACCESS CONTROL DESK</span><ArrowRight size={14} /></>}
             </button>
             <div className="text-center pt-2">
               <p className="text-[10px] text-zinc-500 font-mono">Precoded logins: admin email + <span className="text-orange-400">password</span></p>
@@ -224,36 +261,19 @@ export const Auth: React.FC = () => {
               </div>
             </div>
 
-            <div className="space-y-1">
-              <label className="block text-[10px] text-zinc-500 font-bold uppercase tracking-wider font-mono">Assigned Corporate Role</label>
-              <div className="relative">
-                <select
-                  value={role}
-                  onChange={(e) => setRole(e.target.value as any)}
-                  className="w-full bg-[#060914] border border-zinc-900 focus:border-orange-500/55 p-2.5 rounded text-xs outline-none text-zinc-300 pl-9 cursor-pointer font-mono"
-                >
-                  <option value="Director">Director (Executive Access)</option>
-                  <option value="Fleet Manager">Fleet Manager (Machinery & Operators)</option>
-                  <option value="Dispatch Manager">Dispatch Manager (Transit & Routes)</option>
-                  <option value="Driver">Driver (Operational Hauler Personnel)</option>
-                </select>
-                <Shield className="absolute left-3 top-3 text-zinc-600" size={14} />
-              </div>
-            </div>
-
             <div className="bg-[#060914] p-3 rounded border border-zinc-950 font-mono text-[10px] leading-relaxed text-zinc-500 flex items-start gap-2">
               <Lock size={12} className="text-orange-500 shrink-0 mt-0.5" />
               <span>
-                Safety Lock: Fresh operational roles register in <span className="text-orange-400 font-bold">Pending status</span> and are locked out of secure channels. Access unlocks once verified by an Admin.
+                Your account will be registered in <span className="text-orange-400 font-bold">Pending status</span>. An administrator will assign your role and verify your access.
               </span>
             </div>
 
             <button
               type="submit"
-              className="w-full py-3 bg-gradient-to-r from-orange-600 to-amber-500 hover:from-orange-500 hover:to-amber-400 text-black font-extrabold text-xs tracking-widest font-mono rounded-lg transition-all shadow-lg shadow-orange-600/10 flex items-center justify-center gap-2 cursor-pointer mt-2"
+              disabled={loading}
+              className="w-full py-3 bg-gradient-to-r from-orange-600 to-amber-500 hover:from-orange-500 hover:to-amber-400 text-black font-extrabold text-xs tracking-widest font-mono rounded-lg transition-all shadow-lg shadow-orange-600/10 flex items-center justify-center gap-2 cursor-pointer mt-2 disabled:opacity-50"
             >
-              <span>SUBMIT REGISTRY APPLICATION</span>
-              <ArrowRight size={14} />
+              {loading ? <span className="animate-pulse">REGISTERING...</span> : <><span>SUBMIT REGISTRY APPLICATION</span><ArrowRight size={14} /></>}
             </button>
           </form>
         )}

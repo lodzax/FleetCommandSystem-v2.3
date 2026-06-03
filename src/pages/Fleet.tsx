@@ -1,20 +1,27 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useFleet } from '../context/FleetContext';
 import { Layout } from '../components/NavigationSidebar';
 import { 
   Plus, Search, ShieldAlert, CheckCircle, Wrench, AlertTriangle, 
-  Settings, Truck as TruckIcon, Gauge, Hammer, Sparkles, X, UserCheck, Trash2
+  Settings, Truck as TruckIcon, Gauge, Hammer, Sparkles, X, UserCheck, Trash2,
+  MapPin, Satellite, Navigation, Battery, Signal, ExternalLink, Smartphone
 } from 'lucide-react';
 import { Truck, TruckStatus } from '../types';
 import { compressAndGetBase64 } from '../utils/compress';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 
 export const Fleet: React.FC = () => {
   const { trucks, drivers, addTruck, updateTruckStatus, assignDriverToTruck, deleteTruck, branches } = useFleet();
 
+  const [viewTab, setViewTab] = useState<'roster' | 'tracking'>('roster');
   const [search, setSearch] = useState('');
   const [selectedTruck, setSelectedTruck] = useState<Truck | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const mapRef = useRef<HTMLDivElement>(null);
+  const leafletMap = useRef<L.Map | null>(null);
+  const markersRef = useRef<L.Marker[]>([]);
 
   // Form states
   const [plateNumber, setPlateNumber] = useState('');
@@ -28,6 +35,9 @@ export const Fleet: React.FC = () => {
   const [customLat, setCustomLat] = useState(-17.8252);
   const [customLng, setCustomLng] = useState(31.0530);
   const [imageUrl, setImageUrl] = useState('');
+  const [trackerImei, setTrackerImei] = useState('');
+  const [trackerModel, setTrackerModel] = useState('EH002 GPS Vehicle Tracker');
+  const [trackerSimCard, setTrackerSimCard] = useState('');
 
   // Selected truck assign driver states
   const [assignDriverId, setAssignDriverId] = useState('');
@@ -76,7 +86,10 @@ export const Fleet: React.FC = () => {
       fuelRate,
       currentLat: lat,
       currentLng: lng,
-      imageUrl: imageUrl.trim() || undefined
+      imageUrl: imageUrl.trim() || undefined,
+      trackerImei: trackerImei.trim() || undefined,
+      trackerModel: trackerImei.trim() ? trackerModel : undefined,
+      trackerSimCard: trackerImei.trim() ? trackerSimCard.trim() || undefined : undefined
     });
 
     // Reset Form
@@ -88,6 +101,9 @@ export const Fleet: React.FC = () => {
     setLocationPreset(0);
     setUseCustomLocation(false);
     setImageUrl('');
+    setTrackerImei('');
+    setTrackerSimCard('');
+    setTrackerModel('EH002 GPS Vehicle Tracker');
     setShowAddModal(false);
   };
 
@@ -108,37 +124,221 @@ export const Fleet: React.FC = () => {
   const selectedTruckDriver = selectedTruck ? drivers.find(d => d.id === selectedTruck.driverId) : null;
   const unassignedDrivers = drivers.filter(d => d.status === 'Active' || d.status === 'Off Duty' && !d.assignedTruckId);
 
+  // Map initialization
+  useEffect(() => {
+    if (viewTab !== 'tracking' || !mapRef.current) return;
+
+    if (!leafletMap.current) {
+      leafletMap.current = L.map(mapRef.current, { zoomControl: false }).setView([-19.0, 29.5], 7);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(leafletMap.current);
+      L.control.zoom({ position: 'bottomright' }).addTo(leafletMap.current);
+    }
+
+    // Clear old markers
+    markersRef.current.forEach(m => m.remove());
+    markersRef.current = [];
+
+    trucks.forEach(t => {
+      if (!t.currentLat || !t.currentLng) return;
+      const statusColors: Record<string, string> = {
+        Active: '#22c55e',
+        Idle: '#a1a1aa',
+        Maintenance: '#eab308',
+        'Out of Service': '#ef4444'
+      };
+      const color = statusColors[t.status] || '#a1a1aa';
+
+      const icon = L.divIcon({
+        className: '',
+        html: `<div style="background:${color};width:14px;height:14px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 6px rgba(0,0,0,0.4)"></div>`,
+        iconSize: [14, 14],
+        iconAnchor: [7, 7]
+      });
+
+      const marker = L.marker([t.currentLat, t.currentLng], { icon })
+        .addTo(leafletMap.current!)
+        .bindPopup(`
+          <div style="font-family:monospace;font-size:11px;min-width:180px">
+            <b style="font-size:13px">${t.plateNumber}</b><br/>
+            ${t.type}<br/>
+            <span style="color:${color}">●</span> ${t.status}<br/>
+            ${t.trackerImei ? `IMEI: ${t.trackerImei}<br/>` : ''}
+            ${t.trackerModel ? `Tracker: ${t.trackerModel}<br/>` : ''}
+            ${t.lastGpsUpdate ? `Last GPS: ${new Date(t.lastGpsUpdate).toLocaleString()}` : 'No GPS data'}
+          </div>
+        `);
+
+      markersRef.current.push(marker);
+    });
+
+    // Fit bounds to markers
+    if (markersRef.current.length > 0) {
+      const group = L.featureGroup(markersRef.current);
+      leafletMap.current.fitBounds(group.getBounds().pad(0.1));
+    }
+
+    return () => {
+      // Cleanup not needed since we reuse the map
+    };
+  }, [viewTab, trucks]);
+
   return (
     <Layout title="Fleet">
       <div className="space-y-6">
         
-        {/* TOP PANEL CONTROL */}
+        {/* VIEW TAB TOGGLE */}
         <div className="bg-[#101424] border border-zinc-800 p-5 rounded-xl flex flex-col sm:flex-row gap-4 justify-between items-center">
-          <div className="relative w-full sm:w-80">
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search machine code or plates..."
-              className="w-full bg-[#0c0f1d] border border-zinc-850 text-xs px-3.5 py-2 pl-9 rounded-lg focus:border-zinc-700 text-zinc-200 outline-none placeholder-zinc-500 font-mono"
-            />
-            <Search className="absolute left-3 top-2.5 text-zinc-555" size={14} />
+          <div className="flex gap-1 bg-[#0c0f1d] p-1 rounded-lg border border-zinc-800/60">
+            <button
+              onClick={() => setViewTab('roster')}
+              className={`px-4 py-1.5 rounded text-[11px] font-mono font-bold tracking-wider transition-all cursor-pointer ${
+                viewTab === 'roster' ? 'bg-orange-600 text-black shadow' : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              <TruckIcon size={14} className="inline mr-1.5" />FLEET ROSTER
+            </button>
+            <button
+              onClick={() => setViewTab('tracking')}
+              className={`px-4 py-1.5 rounded text-[11px] font-mono font-bold tracking-wider transition-all cursor-pointer ${
+                viewTab === 'tracking' ? 'bg-orange-600 text-black shadow' : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              <Satellite size={14} className="inline mr-1.5" />GPS TRACKING
+            </button>
           </div>
 
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="w-full sm:w-auto px-4 py-2 bg-orange-600 hover:bg-orange-500 text-black font-semibold text-xs tracking-wider rounded-lg flex items-center justify-center gap-1.5 transition-all shadow-md shadow-orange-500/10 cursor-pointer"
-          >
-            <Plus size={15} />
-            <span>Commission Truck</span>
-          </button>
+          {viewTab === 'roster' && (
+            <>
+              <div className="relative w-full sm:w-72">
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search machine code or plates..."
+                  className="w-full bg-[#0c0f1d] border border-zinc-850 text-xs px-3.5 py-2 pl-9 rounded-lg focus:border-zinc-700 text-zinc-200 outline-none placeholder-zinc-500 font-mono"
+                />
+                <Search className="absolute left-3 top-2.5 text-zinc-555" size={14} />
+              </div>
+              <button
+                onClick={() => setShowAddModal(true)}
+                className="w-full sm:w-auto px-4 py-2 bg-orange-600 hover:bg-orange-500 text-black font-semibold text-xs tracking-wider rounded-lg flex items-center justify-center gap-1.5 transition-all shadow-md shadow-orange-500/10 cursor-pointer"
+              >
+                <Plus size={15} />
+                <span>Commission Truck</span>
+              </button>
+            </>
+          )}
+
+          {viewTab === 'tracking' && (
+            <div className="flex items-center gap-3 text-[11px] font-mono text-zinc-400">
+              <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-emerald-500 inline-block"></span> Active</span>
+              <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-zinc-400 inline-block"></span> Idle</span>
+              <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-yellow-500 inline-block"></span> Maintenance</span>
+              <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-red-500 inline-block"></span> Out of Service</span>
+            </div>
+          )}
         </div>
 
-        {/* DOUBLE COLUMN SPLIT SCREEN: TRUCK ROSTER | TELEMETRY INTERFACES */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {viewTab === 'tracking' ? (
+          /* GPS TRACKING VIEW */
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            <div className="lg:col-span-3 bg-[#101424] border border-zinc-800 rounded-xl overflow-hidden" style={{ height: '600px' }}>
+              <div ref={mapRef} className="w-full h-full" />
+            </div>
+            <div className="lg:col-span-1 bg-[#101424] border border-zinc-800 rounded-xl p-5 overflow-y-auto space-y-4">
+              <div className="flex items-center gap-2 border-b border-zinc-800 pb-3">
+                <Satellite size={16} className="text-orange-500" />
+                <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-300 font-mono">Ehangtech GPS Tracking</h3>
+              </div>
+
+              {/* Ehangtech platform integration card */}
+              <div className="bg-[#0c0f1d] border border-orange-500/20 rounded-lg p-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <Smartphone size={14} className="text-orange-500" />
+                  <span className="text-[10px] font-mono font-bold text-zinc-300 uppercase">Tracker Platform</span>
+                </div>
+                <p className="text-[10px] text-zinc-500 font-mono leading-relaxed">
+                  Powered by <span className="text-orange-400 font-semibold">Ehangtech</span> GPS vehicle trackers — real-time fleet positioning via GSM/GPRS/Beidou.
+                </p>
+                <a
+                  href="http://www.4G-gps.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 text-[10px] text-orange-500 hover:text-orange-400 font-mono font-bold"
+                >
+                  <ExternalLink size={12} />
+                  Open Ehangtech Tracking Portal
+                </a>
+                <div className="pt-2 text-[9px] text-zinc-600 font-mono border-t border-zinc-800/60">
+                  Supported: EH002, EH003, ET006, IP67, OBD, Relay, Fuel Sensor trackers
+                </div>
+              </div>
+
+              {/* Truck GPS list */}
+              <h4 className="text-[10px] text-zinc-500 uppercase tracking-wider font-mono font-bold">Fleet GPS Status</h4>
+              <div className="space-y-2">
+                {trucks.filter(t => t.trackerImei).map(t => {
+                  const statusColors: Record<string, string> = {
+                    Active: 'text-emerald-500',
+                    Idle: 'text-zinc-400',
+                    Maintenance: 'text-yellow-500',
+                    'Out of Service': 'text-red-500'
+                  };
+                  const sinceLastUpdate = t.lastGpsUpdate
+                    ? Math.round((Date.now() - new Date(t.lastGpsUpdate).getTime()) / 60000)
+                    : null;
+                  return (
+                    <div key={t.id} className="bg-[#0c0f1d] border border-zinc-800/80 rounded-lg p-2.5 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-zinc-200 font-mono">{t.plateNumber}</span>
+                        <span className={`text-[9px] font-mono font-bold ${statusColors[t.status] || 'text-zinc-400'}`}>
+                          ● {t.status}
+                        </span>
+                      </div>
+                      <div className="text-[9px] text-zinc-500 font-mono space-y-0.5">
+                        <div className="flex items-center gap-1.5">
+                          <Navigation size={10} className="text-orange-500" />
+                          Tracker: {t.trackerModel || 'N/A'}
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <Signal size={10} className="text-orange-500" />
+                          IMEI: {t.trackerImei}
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <Battery size={10} className="text-orange-500" />
+                          Battery: {t.trackerBattery != null ? `${t.trackerBattery}%` : 'N/A'}
+                        </div>
+                        <div className="flex items-center gap-1.5 text-zinc-600">
+                          <MapPin size={10} />
+                          {sinceLastUpdate != null
+                            ? sinceLastUpdate < 60
+                              ? `Updated ${sinceLastUpdate} min ago`
+                              : `Updated ${Math.round(sinceLastUpdate / 60)}h ago`
+                            : 'No data'}
+                          {t.trackerSpeed != null && t.trackerSpeed > 0 && (
+                            <span className="text-emerald-500">{t.trackerSpeed} km/h</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                {trucks.filter(t => !t.trackerImei).length > 0 && (
+                  <div className="text-[9px] text-zinc-600 font-mono text-center py-2">
+                    {trucks.filter(t => !t.trackerImei).length} truck(s) without GPS tracker fitted
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* DOUBLE COLUMN SPLIT SCREEN: TRUCK ROSTER | TELEMETRY INTERFACES */
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           
-          {/* LEFT: ROSTER LISTING */}
-          <div className="lg:col-span-2 bg-[#101424] border border-zinc-800 rounded-xl p-6">
+            {/* LEFT: ROSTER LISTING */}
+            <div className="lg:col-span-2 bg-[#101424] border border-zinc-800 rounded-xl p-6">
             <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 font-mono pb-3 border-b border-zinc-800 mb-4">
               ACTIVE HEAVY MACHINERY LEDGER ({filteredTrucks.length})
             </h3>
@@ -394,6 +594,67 @@ export const Fleet: React.FC = () => {
                   )}
                 </div>
 
+                {/* Ehangtech GPS Tracker Device */}
+                <div className="space-y-2.5 border-t border-zinc-800/80 pt-4">
+                  <p className="text-[10px] text-orange-500 uppercase tracking-widest font-mono font-bold flex items-center gap-1.5">
+                    <Satellite size={12} /> GPS Tracker
+                  </p>
+                  <div className="bg-[#0c0f1d] border border-zinc-800/80 rounded-lg p-3 space-y-2">
+                    {selectedTruck.trackerImei ? (
+                      <>
+                        <div className="flex justify-between items-center text-[10px] font-mono">
+                          <span className="text-zinc-500">Tracker Model</span>
+                          <span className="text-zinc-200 font-semibold">{selectedTruck.trackerModel || 'N/A'}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-[10px] font-mono">
+                          <span className="text-zinc-500">IMEI Number</span>
+                          <span className="text-zinc-200 font-semibold text-[9px]">{selectedTruck.trackerImei}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-[10px] font-mono">
+                          <span className="text-zinc-500">SIM Card</span>
+                          <span className="text-zinc-200 font-semibold text-[9px]">{selectedTruck.trackerSimCard || 'N/A'}</span>
+                        </div>
+                        {selectedTruck.trackerBattery != null && (
+                          <div className="flex justify-between items-center text-[10px] font-mono">
+                            <span className="text-zinc-500 flex items-center gap-1"><Battery size={10} /> Battery</span>
+                            <span className={selectedTruck.trackerBattery < 30 ? 'text-red-400 font-bold' : 'text-emerald-400 font-semibold'}>
+                              {selectedTruck.trackerBattery}%
+                            </span>
+                          </div>
+                        )}
+                        {selectedTruck.trackerSpeed != null && selectedTruck.trackerSpeed > 0 && (
+                          <div className="flex justify-between items-center text-[10px] font-mono">
+                            <span className="text-zinc-500 flex items-center gap-1"><Navigation size={10} /> Speed</span>
+                            <span className="text-emerald-400 font-semibold">{selectedTruck.trackerSpeed} km/h</span>
+                          </div>
+                        )}
+                        {selectedTruck.lastGpsUpdate && (
+                          <div className="flex justify-between items-center text-[10px] font-mono border-t border-zinc-800/60 pt-1.5 mt-1">
+                            <span className="text-zinc-500">Last GPS fix</span>
+                            <span className="text-zinc-400">{new Date(selectedTruck.lastGpsUpdate).toLocaleString()}</span>
+                          </div>
+                        )}
+                        <div className="pt-1">
+                          <a
+                            href="http://www.4G-gps.com"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[9px] text-orange-500 hover:text-orange-400 font-mono flex items-center gap-1"
+                          >
+                            <ExternalLink size={10} /> Track on Ehangtech Portal
+                          </a>
+                        </div>
+                      </>
+                    ) : (
+                      <p className="text-[10px] text-zinc-500 font-mono text-center py-2">
+                        No GPS tracker fitted to this asset.
+                        <br />
+                        <span className="text-zinc-600">Commission with an Ehangtech tracker (EH002, EH003, or ET006).</span>
+                      </p>
+                    )}
+                  </div>
+                </div>
+
                 {/* Danger Zone / Deletion */}
                 <div className="space-y-2.5 border-t border-zinc-800/80 pt-4">
                   <p className="text-[10px] text-red-500 uppercase tracking-widest font-mono font-bold">Terminal Safety & Deletion</p>
@@ -442,6 +703,7 @@ export const Fleet: React.FC = () => {
           </div>
 
         </div>
+        )}
 
       </div>
 
@@ -674,6 +936,56 @@ export const Fleet: React.FC = () => {
                     </div>
                   </div>
                 )}
+              </div>
+
+              {/* Ehangtech GPS Tracker Configuration */}
+              <div className="border-t border-zinc-800 pt-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Satellite size={14} className="text-orange-500" />
+                  <label className="text-[11px] font-bold text-orange-500 uppercase tracking-wider font-mono">Ehangtech GPS Tracker (Optional)</label>
+                </div>
+                <p className="text-[9px] text-zinc-600 font-mono -mt-1">
+                  Fitting an Ehangtech GPS tracker enables real-time fleet tracking on the GPS Fleet Tracking map.
+                  Supported: EH002, EH003, ET006, IP67, OBD, Relay models.
+                </p>
+                <div className="grid grid-cols-2 gap-3 font-mono">
+                  <div>
+                    <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1">Tracker IMEI</label>
+                    <input
+                      type="text"
+                      placeholder="e.g., 861234567890101"
+                      value={trackerImei}
+                      onChange={(e) => setTrackerImei(e.target.value)}
+                      className="w-full bg-[#0c0f1d] border border-zinc-850 p-2 rounded text-zinc-200 outline-none focus:border-orange-500 text-[11px]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1">Tracker Model</label>
+                    <select
+                      value={trackerModel}
+                      onChange={(e) => setTrackerModel(e.target.value)}
+                      className="w-full bg-[#0c0f1d] border border-zinc-850 p-2 rounded text-zinc-200 outline-none focus:border-orange-500 text-[11px] cursor-pointer"
+                    >
+                      <option value="EH002 GPS Vehicle Tracker">EH002 GPS Vehicle Tracker</option>
+                      <option value="EH003 GPS Vehicle Tracker">EH003 GPS Vehicle Tracker</option>
+                      <option value="ET006 GPS Vehicle Tracker">ET006 GPS Vehicle Tracker</option>
+                      <option value="IP67 Waterproof GPS Vehicle Tracker">IP67 Waterproof</option>
+                      <option value="OBD GPS Vehicle Tracker">OBD GPS Tracker</option>
+                      <option value="Relay GPS Vehicle Tracker">Relay GPS Tracker</option>
+                      <option value="Fuel Sensor GPS Vehicle Tracker">Fuel Sensor GPS Tracker</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider font-mono mb-1">SIM Card Number</label>
+                  <input
+                    type="text"
+                    placeholder="e.g., SIM-898602100123456789"
+                    value={trackerSimCard}
+                    onChange={(e) => setTrackerSimCard(e.target.value)}
+                    className="w-full bg-[#0c0f1d] border border-zinc-850 p-2 rounded text-zinc-200 outline-none focus:border-orange-500 text-[11px] font-mono"
+                  />
+                </div>
               </div>
 
               <div className="pt-4 border-t border-zinc-800 flex justify-end gap-3 font-mono">

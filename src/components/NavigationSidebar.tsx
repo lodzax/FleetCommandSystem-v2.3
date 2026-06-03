@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { NavLink, Link, useNavigate, useLocation } from 'react-router-dom';
 import { useFleet } from '../context/FleetContext';
+import { api } from '../api';
 import { 
-  LayoutDashboard, Radio, Briefcase, Users, Truck, Wrench, Fuel, User, 
-  RotateCcw, Bell, FileText, X, Printer, ShieldAlert, CheckCircle, Flame,
-  ChevronDown, Settings as SettingsIcon, Download, LogOut
+  LayoutDashboard, Radio, Briefcase, Users, Truck, Wrench, Fuel, User as UserIcon, 
+  Bell, FileText, X, Printer, ShieldAlert, CheckCircle, Flame,
+  Settings as SettingsIcon, Download, LogOut, Landmark, Menu
 } from 'lucide-react';
+import logoImg from '../../assets/logo.png';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -14,14 +16,15 @@ interface LayoutProps {
 
 export const Layout: React.FC<LayoutProps> = ({ children, title }) => {
   const { 
-    activeUser, users, setActiveUser, resetAllData, trucks, drivers, jobs, maintenance, fuelLogs,
+    activeUser, users, setActiveUser, trucks, drivers, jobs, maintenance, fuelLogs,
     fuelRequisitions, activities, branches, theme, logoText, logoEmoji, logout 
   } = useFleet();
   const location = useLocation();
-  const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
-  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+
+  const closeMobileSidebar = () => setMobileSidebarOpen(false);
 
   const THEME_STYLES: { [key: string]: {
     primary: string;
@@ -105,22 +108,25 @@ export const Layout: React.FC<LayoutProps> = ({ children, title }) => {
   const pendingJobsCount = jobs.filter(j => j.status === 'Pending').length;
   const dispatchWarnings = trucks.filter(t => t.status === 'Maintenance').length;
 
-  const handleReset = () => {
-    setShowResetConfirm(true);
-  };
-
   if (!activeUser) return null;
 
   const isPending = activeUser.status === 'Pending';
   const role = activeUser.role;
+  const isAdminOrDirector = role === 'Administrator' || role === 'Director';
+  const isOpsRole = isAdminOrDirector || role === 'Manager' || role === 'Treasurer';
+  const isAttendant = role === 'Attendant';
 
-  const showDispatch = !isPending && (role === 'Admin' || role === 'Director' || role === 'Dispatch Manager');
-  const showJobs = !isPending && (role === 'Admin' || role === 'Director' || role === 'Dispatch Manager');
-  const showDrivers = !isPending && (role === 'Admin' || role === 'Director' || role === 'Fleet Manager');
-  const showFleet = !isPending && (role === 'Admin' || role === 'Director' || role === 'Fleet Manager');
-  const showMaintenance = !isPending && (role === 'Admin' || role === 'Director');
-  const showFuel = !isPending && (role === 'Admin' || role === 'Director' || role === 'Fleet Manager');
-  const showSettings = !isPending && (role === 'Admin' || role === 'Director');
+  const showDispatch = !isPending && (isOpsRole || role === 'Accounts');
+  const showJobs = !isPending && (isOpsRole || role === 'Accounts');
+  const showDrivers = !isPending && (isOpsRole || role === 'Accounts' || role === 'Driver');
+  const showFleet = !isPending && (isOpsRole || role === 'Accounts' || role === 'Driver');
+  const showMaintenance = !isPending && (isOpsRole || role === 'Accounts' || role === 'Driver');
+  const showFuel = !isPending && (isOpsRole || role === 'Accounts');
+  const showRequisitions = !isPending && (isOpsRole || role === 'Accounts' || role === 'Driver');
+  const showRedemption = !isPending && role === 'Attendant';
+  const showReports = !isPending && (isAdminOrDirector || role === 'Manager' || role === 'Accounts' || role === 'Treasurer');
+  const showSettings = !isPending && isAdminOrDirector;
+  const showUserManagement = !isPending && role === 'Administrator';
 
   const getActiveReportConfig = () => {
     const path = location.pathname;
@@ -197,6 +203,42 @@ export const Layout: React.FC<LayoutProps> = ({ children, title }) => {
             { label: 'Accumulated Fuel Payouts', value: `$${fuelLogs.reduce((sum, f) => sum + f.cost, 0).toLocaleString()}`, sub: 'Paid transactions at depot terminals' },
             { label: 'Pending Requisitions', value: `${fuelRequisitions.filter(r => r.status === 'Pending').length} Vouchers`, sub: 'Fuel requests awaiting authorization' },
             { label: 'Redeemed Allocations', value: `${fuelRequisitions.filter(r => r.status === 'Redeemed').length} Redeemed`, sub: 'Vouchers physically fueled' }
+          ]
+        };
+      case '/requisitions':
+        return {
+          id: 'REQUISITIONS',
+          title: 'FUEL TOKEN REQUISITIONS PIPELINE AUDIT',
+          subtitle: 'Authorized fuel dispensing vouchers, approval pipeline, and redemption tracking across Zimbabwe fuel depots.',
+          kpis: [
+            { label: 'Pending Requisitions', value: `${fuelRequisitions.filter(r => r.status === 'Pending').length} Vouchers`, sub: 'Fuel requests awaiting authorization' },
+            { label: 'Approved Vouchers', value: `${fuelRequisitions.filter(r => r.status === 'Approved').length} Approved`, sub: 'Ready for depot redemption' },
+            { label: 'Redeemed Allocations', value: `${fuelRequisitions.filter(r => r.status === 'Redeemed').length} Redeemed`, sub: 'Vouchers physically fueled' },
+            { label: 'Total Requisitions', value: `${fuelRequisitions.length} Records`, sub: 'All registered fuel vouchers' }
+          ]
+        };
+      case '/redemption':
+        return {
+          id: 'REDEMPTION',
+          title: 'MINEAZY FUEL REDEMPTION AUDIT',
+          subtitle: 'Fuel voucher token verification, pump dispensing, and gas station redemption records for Zimbabwe fuel depots.',
+          kpis: [
+            { label: 'Approved Vouchers', value: `${fuelRequisitions.filter(r => r.status === 'Approved').length} Ready`, sub: 'Awaiting pump dispensing' },
+            { label: 'Redeemed Vouchers', value: `${fuelRequisitions.filter(r => r.status === 'Redeemed').length} Fulfilled`, sub: 'Physically dispensed fuel tokens' },
+            { label: 'Pending Approvals', value: `${fuelRequisitions.filter(r => r.status === 'Pending').length} Pending`, sub: 'Awaiting head office authorization' },
+            { label: 'Total Voucher Volume', value: `${fuelRequisitions.reduce((sum, r) => sum + r.litresRequested, 0).toLocaleString()} Litres`, sub: 'Authorized fuel volume' }
+          ]
+        };
+      case '/reports':
+        return {
+          id: 'REPORTS',
+          title: 'OPERATIONAL REPORTS CONSOLE',
+          subtitle: 'Downloadable PDF reports covering dispatch, orders, drivers, fleet, maintenance, fuel reconciliation, and requisitions.',
+          kpis: [
+            { label: 'Available Reports', value: '7 Categories', sub: 'Dispatch, Orders, Drivers, Fleet, Maintenance, Fuel, Requisitions' },
+            { label: 'Total Records', value: `${jobs.length + drivers.length + trucks.length + maintenance.length + fuelLogs.length + fuelRequisitions.length}`, sub: 'Combined operational data points' },
+            { label: 'Last Generated', value: new Date().toLocaleDateString(), sub: 'Current report session' },
+            { label: 'Generated By', value: activeUser.name, sub: `Clearance: ${activeUser.role}` }
           ]
         };
       case '/profile':
@@ -311,6 +353,24 @@ export const Layout: React.FC<LayoutProps> = ({ children, title }) => {
         csvContent += `"${r.id}","${tPlate}","${dName}",${r.litresRequested},$${r.estimatedCost},"${r.dateRequested}","${r.status}","${r.approvedDate || 'N/A'}","${r.redeemToken || r.redeemedAttendantSignature || 'None'}"\n`;
       });
     }
+    else if (reportKey === '/requisitions') {
+      csvContent += "LINE LEDGER: FUEL TOKEN REQUISITIONS PIPELINE\n";
+      csvContent += "Req ID,Vehicle,Driver,Requested (Litres),Est. Cost,Request Date,Fuel Date,Fuel Type,Branch,Clearance Status,Reviewed By,Approved By,Rejected By,Rejection Reason,Redeem Token,Redeemed At,Actual Litres,Actual Cost,Purpose\n";
+      fuelRequisitions.forEach(r => {
+        const tPlate = r.truckPlate || trucks.find(t => t.id === r.truckId)?.plateNumber || r.truckId;
+        const dName = r.driverName || drivers.find(d => d.id === r.driverId)?.name || r.driverId;
+        csvContent += `"${r.id}","${tPlate}","${dName}",${r.litresRequested},$${r.estimatedCost},"${r.dateRequested}","${r.fuelDate || r.dateRequested}","${r.fuelType || 'Diesel'}","${r.branchName || r.branchId || ''}","${r.status}","${r.reviewedBy || ''}","${r.approvedBy || ''}","${r.rejectedBy || ''}","${r.rejectionReason || ''}","${r.redeemToken || 'None'}","${r.redeemedByGasStation || ''}",${r.redeemedActualLitres || ''},${r.redeemedActualCost || ''},"${r.purpose}"\n`;
+      });
+    }
+    else if (reportKey === '/redemption') {
+      csvContent += "LINE LEDGER: MINEAZY FUEL REDEMPTION VOUCHERS\n";
+      csvContent += "Req ID,Vehicle,Driver,Requested (Litres),Est. Cost,Request Date,Clearance Status,Redeem Token,Redeemed At,Actual Litres,Actual Cost,Attendant Signature,Purpose\n";
+      fuelRequisitions.forEach(r => {
+        const tPlate = r.truckPlate || trucks.find(t => t.id === r.truckId)?.plateNumber || r.truckId;
+        const dName = r.driverName || drivers.find(d => d.id === r.driverId)?.name || r.driverId;
+        csvContent += `"${r.id}","${tPlate}","${dName}",${r.litresRequested},$${r.estimatedCost},"${r.dateRequested}","${r.status}","${r.redeemToken || 'N/A'}","${r.redeemedByGasStation || ''}",${r.redeemedActualLitres || ''},${r.redeemedActualCost || ''},"${r.redeemedAttendantSignature || ''}","${r.purpose}"\n`;
+      });
+    }
     else if (reportKey === '/profile') {
       csvContent += "LINE LEDGER: ACCOUNT CREDENTIAL MATRIX\n";
       csvContent += "Profile Name,Active Email,Authorized Role,Identity Status,Member Since,Clearance Signature\n";
@@ -369,61 +429,34 @@ export const Layout: React.FC<LayoutProps> = ({ children, title }) => {
 
   return (
     <div className="min-h-screen flex bg-[#0c0f1a] text-gray-100 selection:bg-zinc-800 selection:text-white">
-      {/* Custom Full-Page Overlay Modal for Reset Confirmation */}
-      {showResetConfirm && (
-        <div className="fixed inset-0 bg-[#070912]/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
-          <div className="w-full max-w-sm bg-[#0f1424] border border-red-500/30 rounded-xl p-5 shadow-2xl space-y-4">
-            <div className="flex items-center gap-3 border-b border-zinc-800 pb-3">
-              <div className="p-2 rounded bg-red-500/10 text-red-500">
-                <ShieldAlert size={20} />
-              </div>
-              <div>
-                <h3 className="text-xs font-bold uppercase tracking-wider text-red-500 font-mono">System Purge Request</h3>
-                <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-mono">Action Required</p>
-              </div>
-            </div>
-            
-            <p className="text-xs text-zinc-400 font-medium leading-relaxed">
-              This will completely clear all trucks, drivers, active and completed jobs, and maintenance catalogs in modern browser storage. This action is irreversible.
-            </p>
-
-            <div className="flex gap-2 pt-1">
-              <button
-                onClick={() => {
-                  resetAllData();
-                  setShowResetConfirm(false);
-                  window.location.reload();
-                }}
-                className="flex-1 py-1.5 bg-red-600 hover:bg-red-500 active:bg-red-700 text-white font-mono text-[10px] font-extrabold rounded cursor-pointer transition-colors text-center"
-              >
-                Yes, Reset System
-              </button>
-              <button
-                onClick={() => setShowResetConfirm(false)}
-                className="flex-1 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-800 font-mono text-[10px] font-bold rounded cursor-pointer transition-colors text-center"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* MOBILE OVERLAY */}
+      {mobileSidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/60 z-40 lg:hidden"
+          onClick={closeMobileSidebar}
+        />
       )}
+
       {/* SIDEBAR */}
-      <aside className="w-64 bg-[#0d1222]/95 border-r border-zinc-800/80 flex flex-col justify-between shrink-0">
+      <aside className={`fixed lg:static inset-y-0 left-0 z-50 w-64 bg-[#0d1222]/95 border-r border-zinc-800/80 flex flex-col justify-between shrink-0 transform transition-transform duration-200 ${mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
         <div>
+          {/* Mobile close button */}
+          <div className="flex justify-end p-2 lg:hidden">
+            <button onClick={closeMobileSidebar} className="h-7 w-7 rounded-full bg-zinc-900 flex items-center justify-center text-zinc-400 hover:text-white">
+              <X size={14} />
+            </button>
+          </div>
           {/* Logo Brand */}
           <div className="p-6 border-b border-zinc-800/80 flex items-center gap-3">
-            <div className={`h-8 w-8 bg-gradient-to-tr ${currentTheme.gradient} rounded flex items-center justify-center text-[#0d1222] font-extrabold text-lg shadow-md ${currentTheme.shadow}`}>
-              {logoEmoji}
-            </div>
+            <img src={logoImg} alt="Logo" className="h-8" />
             <div className="min-w-0 flex-1">
-              <h1 className={`text-sm font-black tracking-widest ${currentTheme.primary} font-mono block truncate`} title={logoText}>{logoText}</h1>
               <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-mono">Ops Control Center</span>
             </div>
           </div>
 
           {/* Navigation Links */}
-          <nav className="p-4 space-y-1">
+          <nav className="p-4 space-y-1" onClick={closeMobileSidebar}>
+            {!isAttendant && (
             <NavLink 
               to="/" 
               className={({ isActive }) => navLinkClass(isActive)}
@@ -431,6 +464,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, title }) => {
               <LayoutDashboard size={18} />
               <span>Dashboard</span>
             </NavLink>
+            )}
 
             {showDispatch && (
               <NavLink 
@@ -502,13 +536,45 @@ export const Layout: React.FC<LayoutProps> = ({ children, title }) => {
               </NavLink>
             )}
 
+            {showRequisitions && (
+              <NavLink 
+                to="/requisitions" 
+                className={({ isActive }) => navLinkClass(isActive)}
+              >
+                <FileText size={18} />
+                <span>Requisitions Pipeline</span>
+              </NavLink>
+            )}
+
+            {showRedemption && (
+              <NavLink 
+                to="/redemption" 
+                className={({ isActive }) => navLinkClass(isActive)}
+              >
+                <Landmark size={18} />
+                <span>Mineazy Fuel Redemption</span>
+              </NavLink>
+            )}
+
+            {showReports && (
+              <NavLink 
+                to="/reports" 
+                className={({ isActive }) => navLinkClass(isActive)}
+              >
+                <FileText size={18} />
+                <span>Reports</span>
+              </NavLink>
+            )}
+
+            {!isAttendant && (
             <NavLink 
               to="/profile" 
               className={({ isActive }) => navLinkClass(isActive)}
             >
-              <User size={18} />
+              <UserIcon size={18} />
               <span>Profile</span>
             </NavLink>
+            )}
 
             {showSettings && (
               <NavLink 
@@ -517,6 +583,16 @@ export const Layout: React.FC<LayoutProps> = ({ children, title }) => {
               >
                 <SettingsIcon size={18} />
                 <span>Settings</span>
+              </NavLink>
+            )}
+
+            {showUserManagement && (
+              <NavLink 
+                to="/users" 
+                className={({ isActive }) => navLinkClass(isActive)}
+              >
+                <Users size={18} />
+                <span>User Management</span>
               </NavLink>
             )}
           </nav>
@@ -537,27 +613,12 @@ export const Layout: React.FC<LayoutProps> = ({ children, title }) => {
 
           <div className="flex gap-1.5">
             <button 
-              onClick={handleReset}
-              className="px-2 py-1.5 rounded bg-zinc-900 border border-zinc-800 hover:border-orange-500/50 hover:bg-orange-500/5 text-[9px] text-zinc-500 hover:text-orange-500 transition-all flex items-center justify-center gap-0.5 shrink-0"
-              title="Wipe & Clear Entire Database"
-            >
-              <RotateCcw size={10} />
-              <span>Reset</span>
-            </button>
-            <Link 
-              to="/profile"
-              className="flex-1 px-2 py-1.5 rounded bg-zinc-900 border border-zinc-800 hover:border-amber-500/50 text-[9px] text-zinc-400 hover:text-amber-500 hover:bg-amber-500/5 transition-all flex items-center justify-center gap-0.5 whitespace-nowrap"
-              title="Switch Operations Persona"
-            >
-              <span>Roles</span>
-            </Link>
-            <button 
               onClick={() => logout()}
               className="px-2 py-1.5 rounded bg-zinc-900 border border-zinc-800 hover:border-red-500/50 hover:bg-red-500/5 text-[9px] text-zinc-500 hover:text-red-400 transition-all flex items-center justify-center gap-0.5 shrink-0 cursor-pointer"
               title="Exit Console Session"
             >
               <LogOut size={10} />
-              <span>Exit</span>
+              <span>Logout</span>
             </button>
           </div>
         </div>
@@ -566,13 +627,22 @@ export const Layout: React.FC<LayoutProps> = ({ children, title }) => {
       {/* CORE WORKSPACE */}
       <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
         {/* TOP BAR */}
-        <header className="h-16 px-8 bg-[#0c101e] border-b border-zinc-800/80 flex items-center justify-between sticky top-0 z-40 shrink-0">
-          <div>
+        <header className="h-16 px-4 md:px-8 bg-[#0c101e] border-b border-zinc-800/80 flex items-center justify-between sticky top-0 z-40 shrink-0">
+          <div className="flex items-center gap-3">
+            {/* Mobile hamburger */}
+            <button 
+              onClick={() => setMobileSidebarOpen(true)}
+              className="lg:hidden h-8 w-8 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-400 hover:text-white hover:border-zinc-700"
+            >
+              <Menu size={18} />
+            </button>
+            <div>
             <span className="text-xs font-semibold uppercase tracking-widest text-[#f97316] font-mono">Operations Control Panel</span>
             <div className="flex items-baseline gap-3 mt-0.5">
               <h2 className="text-lg font-bold tracking-tight text-white">{title}</h2>
-              <span className="text-[11px] text-zinc-500 hidden md:inline font-mono">Zimbabwe Mining & Heavy Haul Corridors</span>
+
             </div>
+          </div>
           </div>
 
           {/* Quick Controls */}
@@ -637,44 +707,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, title }) => {
               )}
             </div>
 
-            {/* Persona Switcher Dropdown */}
-            <div className="relative">
-              <button 
-                onClick={() => setShowUserDropdown(!showUserDropdown)}
-                className="px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center gap-2 hover:border-zinc-700 cursor-pointer text-xs transition-all"
-              >
-                <div className="h-5 w-5 rounded bg-orange-500 text-black flex items-center justify-center font-bold text-[10px]">
-                  {activeUser.name.charAt(0)}
-                </div>
-                <span className="font-mono text-[11px] text-zinc-300 hidden md:inline">{activeUser.name}</span>
-                <ChevronDown size={12} className="text-zinc-500" />
-              </button>
-
-              {showUserDropdown && (
-                <div className="absolute right-0 mt-2 w-56 bg-[#161c2e] border border-zinc-800 rounded-lg shadow-2xl overflow-hidden z-50">
-                  <div className="p-3 bg-zinc-950/40 border-b border-zinc-800">
-                    <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-mono">Switch Operator Roles</p>
-                  </div>
-                  {users.map(u => (
-                    <button
-                      key={u.id}
-                      onClick={() => {
-                        setActiveUser(u);
-                        setShowUserDropdown(false);
-                      }}
-                      className={`w-full text-left p-2 px-3 text-xs flex items-center gap-2 hover:bg-zinc-800 transition-all ${
-                        activeUser.id === u.id ? 'bg-orange-500/10 text-orange-400 font-semibold' : 'text-zinc-400'
-                      }`}
-                    >
-                      <span className="font-mono text-[10px] bg-zinc-950 px-1 py-0.5 rounded text-zinc-400">{u.role.split(' ')[0]}</span>
-                      <span className="truncate">{u.name}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
             {/* Print operations report trigger */}
+            {!isAttendant && (
             <button 
               onClick={() => setShowReportModal(true)}
               className="px-3.5 py-1.5 rounded-lg bg-orange-600 hover:bg-orange-500 text-black font-semibold text-xs tracking-wide flex items-center gap-2 transition-all cursor-pointer shadow-lg shadow-orange-600/10"
@@ -682,11 +716,12 @@ export const Layout: React.FC<LayoutProps> = ({ children, title }) => {
               <FileText size={14} />
               <span className="hidden sm:inline">Generate Report</span>
             </button>
+            )}
           </div>
         </header>
 
         {/* CONTAINER VIEWPORTS */}
-        <main className="flex-1 p-8">
+        <main className="flex-1 p-4 md:p-8">
           {children}
         </main>
       </div>
@@ -719,11 +754,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, title }) => {
               <div className="p-8 overflow-y-auto flex-1 space-y-6" id="fc-printable-area">
                 <div className="flex justify-between items-start border-b border-zinc-900 pb-5">
                   <div>
-                    <h2 className="text-2xl font-black text-white tracking-widest font-mono flex items-center gap-2">
-                      <span className="text-orange-500">{logoEmoji}</span>
-                      <span>{logoText}</span>
-                    </h2>
-                    <p className="text-xs text-zinc-400 font-mono mt-0.5">{config.title}</p>
+                    <img src={logoImg} alt="Logo" className="h-10 mb-1" />
+                    <p className="text-xs text-zinc-400 font-mono">{config.title}</p>
                     <p className="text-xs text-zinc-500 mt-1">Logistics Reference: FC-REG-{config.id}-{today.getFullYear()}-{today.getMonth() + 1}-{today.getDate()}</p>
                   </div>
                   <div className="text-right text-xs text-zinc-400 font-mono space-y-0.5">
@@ -1120,7 +1152,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, title }) => {
                                   <td className="p-3 font-mono text-[11px] text-zinc-300">{r.dateRequested}</td>
                                   <td className="p-3 capitalize">
                                     <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold font-mono ${
-                                      r.status === 'Redeemed' || r.status === 'Approved' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-555/20' :
+                                      r.status === 'Redeemed' || r.status === 'Approved' || r.status === 'Reviewed' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-555/20' :
                                       r.status === 'Pending' ? 'bg-yellow-500/10 text-yellow-500 border border-yellow-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'
                                     }`}>{r.status}</span>
                                   </td>
@@ -1131,6 +1163,94 @@ export const Layout: React.FC<LayoutProps> = ({ children, title }) => {
                           </tbody>
                         </table>
                       </div>
+                    </div>
+                  </div>
+                )}
+
+                {location.pathname === '/requisitions' && (
+                  <div className="space-y-4">
+                    <h4 className="text-xs font-black uppercase tracking-wider text-orange-400 font-mono border-b border-zinc-850 pb-2">Fuel Token Requisitions Pipeline Ledger</h4>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs bg-zinc-950/40 border border-zinc-850 rounded-lg">
+                        <thead>
+                          <tr className="border-b border-zinc-800 bg-[#121625] text-zinc-300 font-mono">
+                            <th className="p-3 px-4">Voucher ID</th>
+                            <th className="p-3">Authorized Pilot & Purpose</th>
+                            <th className="p-3 font-mono">Requested Date</th>
+                            <th className="p-3">Voucher Status</th>
+                            <th className="p-3 text-right font-mono text-zinc-400">Est. Price (USD)</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-zinc-850">
+                          {fuelRequisitions.length === 0 ? (
+                            <tr>
+                              <td colSpan={5} className="p-4 text-center text-zinc-550 font-mono uppercase text-[10px]">No fuel requisitions registered</td>
+                            </tr>
+                          ) : (
+                            fuelRequisitions.map(r => (
+                              <tr key={r.id} className="text-zinc-400 hover:bg-zinc-900/30">
+                                <td className="p-3 px-4 font-mono text-[11px] text-orange-400 font-bold">{r.id}</td>
+                                <td className="p-3 text-[10px]">
+                                  <p className="text-white font-extrabold">{r.driverName || r.driverId}</p>
+                                  <p className="text-zinc-550 text-[9px]">Purpose: {r.purpose}</p>
+                                </td>
+                                <td className="p-3 font-mono text-[11px] text-zinc-300">{r.dateRequested}</td>
+                                <td className="p-3 capitalize">
+                                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold font-mono ${
+                                    r.status === 'Redeemed' || r.status === 'Approved' || r.status === 'Reviewed' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-555/20' :
+                                    r.status === 'Pending' ? 'bg-yellow-500/10 text-yellow-500 border border-yellow-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                                  }`}>{r.status}</span>
+                                </td>
+                                <td className="p-3 text-right font-mono text-zinc-300 font-semibold">${r.estimatedCost.toLocaleString()}</td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {location.pathname === '/redemption' && (
+                  <div className="space-y-4">
+                    <h4 className="text-xs font-black uppercase tracking-wider text-orange-400 font-mono border-b border-zinc-850 pb-2">Mineazy Fuel Redemption Voucher Ledger</h4>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs bg-zinc-950/40 border border-zinc-850 rounded-lg">
+                        <thead>
+                          <tr className="border-b border-zinc-800 bg-[#121625] text-zinc-300 font-mono">
+                            <th className="p-3 px-4">Voucher ID</th>
+                            <th className="p-3">Authorized Pilot & Purpose</th>
+                            <th className="p-3 font-mono">Requested Date</th>
+                            <th className="p-3">Voucher Status</th>
+                            <th className="p-3 text-right font-mono text-zinc-400">Est. Price (USD)</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-zinc-850">
+                          {fuelRequisitions.length === 0 ? (
+                            <tr>
+                              <td colSpan={5} className="p-4 text-center text-zinc-550 font-mono uppercase text-[10px]">No fuel vouchers registered</td>
+                            </tr>
+                          ) : (
+                            fuelRequisitions.map(r => (
+                              <tr key={r.id} className="text-zinc-400 hover:bg-zinc-900/30">
+                                <td className="p-3 px-4 font-mono text-[11px] text-orange-400 font-bold">{r.id}</td>
+                                <td className="p-3 text-[10px]">
+                                  <p className="text-white font-extrabold">{r.driverName || r.driverId}</p>
+                                  <p className="text-zinc-550 text-[9px]">Purpose: {r.purpose}</p>
+                                </td>
+                                <td className="p-3 font-mono text-[11px] text-zinc-300">{r.dateRequested}</td>
+                                <td className="p-3 capitalize">
+                                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold font-mono ${
+                                    r.status === 'Redeemed' || r.status === 'Approved' || r.status === 'Reviewed' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-555/20' :
+                                    r.status === 'Pending' ? 'bg-yellow-500/10 text-yellow-500 border border-yellow-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                                  }`}>{r.status}</span>
+                                </td>
+                                <td className="p-3 text-right font-mono text-zinc-300 font-semibold">${r.estimatedCost.toLocaleString()}</td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
                 )}

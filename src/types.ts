@@ -16,6 +16,13 @@ export interface Truck {
   nextServiceMileage: number;
   lastServiceDate: string;
   imageUrl?: string;
+  // Ehangtech GPS tracker fields
+  trackerImei?: string;
+  trackerModel?: string;
+  trackerSimCard?: string;
+  lastGpsUpdate?: string;
+  trackerBattery?: number;
+  trackerSpeed?: number;
 }
 
 export type DriverStatus = 'Active' | 'On Route' | 'Off Duty' | 'Restricted';
@@ -103,9 +110,20 @@ export interface FuelRequisition {
   driverName?: string;
   litresRequested: number;
   estimatedCost: number;
+  fuelDate: string;
+  fuelType: 'Diesel' | 'Petrol';
+  branchId: string;
+  branchName?: string;
   dateRequested: string;
-  status: 'Pending' | 'Approved' | 'Rejected' | 'Redeemed';
+  status: 'Pending' | 'Reviewed' | 'Approved' | 'Rejected' | 'Redeemed';
+  reviewedBy?: string;
+  reviewedDate?: string;
+  approvedBy?: string;
   approvedDate?: string;
+  rejectedBy?: string;
+  rejectedDate?: string;
+  rejectionReason?: string;
+  qrCodeData?: string;
   purpose: string;
   redeemToken?: string;
   redeemDate?: string;
@@ -113,6 +131,8 @@ export interface FuelRequisition {
   redeemedAttendantSignature?: string;
   redeemedActualLitres?: number;
   redeemedActualCost?: number;
+  submittedBy?: string;
+  submittedById?: string;
 }
 
 export interface Branch {
@@ -125,11 +145,13 @@ export interface Branch {
   manager?: string;
 }
 
+export type UserRole = 'Administrator' | 'Director' | 'Manager' | 'Accounts' | 'Treasurer' | 'Driver' | 'Attendant';
+
 export interface User {
   id: string;
   name: string;
   email: string;
-  role: 'Admin' | 'Director' | 'Fleet Manager' | 'Dispatch Manager' | 'Driver';
+  role: UserRole;
   status: 'Verified' | 'Pending' | 'Suspended';
   memberSince: string;
   avatar?: string;
