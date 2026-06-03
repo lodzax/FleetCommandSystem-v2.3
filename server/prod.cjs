@@ -7,11 +7,14 @@ const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const mysql = require('mysql2/promise');
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const JWT_SECRET = process.env.JWT_SECRET || 'fleetcommand-local-dev-secret-change-in-production';
 
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
@@ -28,10 +31,108 @@ const pool = mysql.createPool({
   queueLimit: 0
 });
 
+// ── JWT Auth Middleware ──
+function authMiddleware(req, res, next) {
+  const header = req.headers.authorization;
+  if (!header || !header.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'No authorization token provided' });
+  }
+  const token = header.slice(7);
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch {
+    res.status(401).json({ error: 'Invalid or expired token' });
+  }
+}
+
+// Require JWT auth for all write operations (POST, PUT, DELETE)
+app.use((req, res, next) => {
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
+    return next();
+  }
+  return authMiddleware(req, res, next);
+});
+
+// ── Auth Routes ──
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+    const [rows] = await pool.query('SELECT * FROM users WHERE email = ?', [email]);
+    const user = rows[0];
+    if (!user) return res.status(401).json({ error: 'Invalid email or password' });
+    if (user.status === 'Suspended') return res.status(403).json({ error: 'Account has been suspended' });
+    const valid = await bcrypt.compare(password, user.password);
+    if (!valid) return res.status(401).json({ error: 'Invalid email or password' });
+    const { password: _, ...safeUser } = user;
+    const token = jwt.sign({ userId: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
+    res.json({ success: true, user: safeUser, token });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/auth/signup', async (req, res) => {
+  try {
+    const { name, email, password, role } = req.body;
+    if (!name || !email || !password) return res.status(400).json({ error: 'Name, email, and password are required' });
+    const userRole = role || 'Driver';
+    const [existing] = await pool.query('SELECT id FROM users WHERE email = ?', [email]);
+    if (existing.length > 0) return res.status(409).json({ error: 'Email already registered' });
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const id = `usr-${Date.now()}`;
+    const memberSince = new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
+    await pool.query('INSERT INTO users (id, name, email, role, status, memberSince, password) VALUES (?,?,?,?,?,?,?)', [id, name, email, userRole, 'Pending', memberSince, hashedPassword]);
+    res.json({ success: true, message: 'Registration submitted. Pending admin approval.' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/auth/verify-password', async (req, res) => {
+  try {
+    const { userId, password } = req.body;
+    if (!userId || !password) return res.status(400).json({ error: 'userId and password are required' });
+    const [rows] = await pool.query('SELECT password FROM users WHERE id = ?', [userId]);
+    const user = rows[0];
+    if (!user) return res.json({ valid: false });
+    const valid = await bcrypt.compare(password, user.password);
+    res.json({ valid });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── API Routes ──
-app.get('/api/users', async (_req, res) => { try { const [r] = await pool.query('SELECT * FROM users'); res.json(r); } catch(e) { res.status(500).json({error:e.message}); } });
-app.post('/api/users', async (req, res) => { try { const u = req.body; await pool.query('INSERT INTO users (id,name,email,role,status,memberSince,avatar,password) VALUES (?,?,?,?,?,?,?,?)', [u.id,u.name,u.email,u.role,u.status,u.memberSince,u.avatar||null,u.password||null]); res.json({ok:true}); } catch(e) { res.status(500).json({error:e.message}); } });
-app.put('/api/users/:id', async (req, res) => { try { const u = req.body; await pool.query('UPDATE users SET name=?,email=?,role=?,status=?,avatar=? WHERE id=?', [u.name,u.email,u.role,u.status,u.avatar||null,req.params.id]); res.json({ok:true}); } catch(e) { res.status(500).json({error:e.message}); } });
+app.get('/api/users', async (_req, res) => {
+  try {
+    const [rows] = await pool.query('SELECT * FROM users');
+    const safe = rows.map(u => { const { password, ...rest } = u; return rest; });
+    res.json(safe);
+  } catch(e) { res.status(500).json({error:e.message}); }
+});
+
+app.post('/api/users', async (req, res) => {
+  try {
+    const u = req.body;
+    const hashed = await bcrypt.hash(u.password, 10);
+    await pool.query('INSERT INTO users (id,name,email,role,status,memberSince,avatar,password) VALUES (?,?,?,?,?,?,?,?)', [u.id,u.name,u.email,u.role,u.status,u.memberSince,u.avatar||null,hashed]);
+    res.json({ok:true});
+  } catch(e) { res.status(500).json({error:e.message}); }
+});
+
+app.put('/api/users/:id', async (req, res) => {
+  try {
+    const u = req.body;
+    await pool.query('UPDATE users SET name=?,email=?,role=?,status=?,avatar=? WHERE id=?', [u.name,u.email,u.role,u.status,u.avatar||null,req.params.id]);
+    res.json({ok:true});
+  } catch(e) { res.status(500).json({error:e.message}); }
+});
+
+app.delete('/api/users/:id', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM users WHERE id = ?', [req.params.id]);
+    res.json({ok:true});
+  } catch(e) { res.status(500).json({error:e.message}); }
+});
 
 app.get('/api/trucks', async (_req, res) => { try { const [r] = await pool.query('SELECT * FROM trucks'); res.json(r); } catch(e) { res.status(500).json({error:e.message}); } });
 app.post('/api/trucks', async (req, res) => { try { const t = req.body; await pool.query('INSERT INTO trucks (id,plateNumber,type,model,capacity,status,fuelRate,currentLat,currentLng,driverId,assignedDriverName,mileage,nextServiceMileage,lastServiceDate,imageUrl) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', [t.id,t.plateNumber,t.type,t.model,t.capacity,t.status,t.fuelRate,t.currentLat,t.currentLng,t.driverId||null,t.assignedDriverName||null,t.mileage,t.nextServiceMileage,t.lastServiceDate,t.imageUrl||null]); res.json({ok:true}); } catch(e) { res.status(500).json({error:e.message}); } });
