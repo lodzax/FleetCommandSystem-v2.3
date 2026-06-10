@@ -27,11 +27,18 @@ export const MineazyFuelRedemption: React.FC = () => {
   const [showAddStation, setShowAddStation] = useState(false);
   const [newStation, setNewStation] = useState('');
   const [showMenu, setShowMenu] = useState(false);
+  const [showDayEndReport, setShowDayEndReport] = useState(false);
 
   const redeemedReqs = fuelRequisitions.filter(r => r.status === 'Redeemed');
   const vouchersRedeemed = redeemedReqs.length;
   const dieselRedeemed = redeemedReqs.filter(r => r.fuelType === 'Diesel').reduce((s, r) => s + (r.redeemedActualLitres || 0), 0);
   const petrolRedeemed = redeemedReqs.filter(r => r.fuelType === 'Petrol').reduce((s, r) => s + (r.redeemedActualLitres || 0), 0);
+
+  const today = new Date().toISOString().split('T')[0];
+  const todayRedeemed = redeemedReqs.filter(r => r.redeemDate === today);
+  const todayDiesel = todayRedeemed.filter(r => r.fuelType === 'Diesel').reduce((s, r) => s + (r.redeemedActualLitres || 0), 0);
+  const todayPetrol = todayRedeemed.filter(r => r.fuelType === 'Petrol').reduce((s, r) => s + (r.redeemedActualLitres || 0), 0);
+  const todayTotalCost = todayRedeemed.reduce((s, r) => s + (r.redeemedActualCost || 0), 0);
 
   const tokenRef = useRef<HTMLInputElement>(null);
 
@@ -166,6 +173,72 @@ export const MineazyFuelRedemption: React.FC = () => {
                 <p className="text-emerald-400 font-bold text-lg">{petrolRedeemed.toLocaleString()} L</p>
               </div>
             </div>
+          </div>
+          <button
+            onClick={() => { setShowDayEndReport(true); setShowMenu(false); }}
+            className="w-full py-2 bg-zinc-900 border border-zinc-800 hover:border-orange-500/40 rounded text-zinc-400 hover:text-orange-400 text-[10px] uppercase tracking-wider cursor-pointer transition-colors"
+          >
+            DAY END REPORT
+          </button>
+        </div>
+      )}
+
+      {/* Day End Report modal */}
+      {showDayEndReport && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-start justify-center pt-4 px-2 overflow-y-auto" onClick={() => setShowDayEndReport(false)}>
+          <div className="bg-[#0c0f1d] border border-zinc-800 rounded-xl w-full max-w-lg p-5 space-y-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h2 className="text-orange-400 font-black text-sm uppercase tracking-wider">Day End Report</h2>
+              <button onClick={() => setShowDayEndReport(false)} className="text-zinc-500 hover:text-white cursor-pointer"><X size={16} /></button>
+            </div>
+            <p className="text-zinc-500 text-[10px]">{today} · {activeUser?.name}</p>
+
+            {todayRedeemed.length === 0 ? (
+              <p className="text-zinc-600 text-sm text-center py-8">No redemptions recorded today</p>
+            ) : (
+              <>
+                <div className="space-y-2 max-h-80 overflow-y-auto">
+                  {todayRedeemed.map(r => (
+                    <div key={r.id} className="bg-zinc-950/50 rounded-lg p-3 text-[11px] space-y-1">
+                      <div className="flex justify-between text-zinc-400">
+                        <span className="font-bold text-white">{r.truckPlate}</span>
+                        <span>{r.fuelType}</span>
+                      </div>
+                      <div className="flex justify-between text-zinc-500">
+                        <span>{r.driverName} · {r.redeemedByGasStation}</span>
+                        <span className="text-white font-bold">{r.redeemedActualLitres}L · ${r.redeemedActualCost}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="border-t border-zinc-800 pt-3 space-y-1 text-[12px]">
+                  <div className="flex justify-between">
+                    <span className="text-zinc-500">Total Vouchers</span>
+                    <span className="text-white font-bold">{todayRedeemed.length}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-zinc-500">Diesel Dispensed</span>
+                    <span className="text-blue-400 font-bold">{todayDiesel.toLocaleString()} L</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-zinc-500">Petrol Dispensed</span>
+                    <span className="text-emerald-400 font-bold">{todayPetrol.toLocaleString()} L</span>
+                  </div>
+                  <div className="flex justify-between border-t border-zinc-800 pt-1">
+                    <span className="text-zinc-400 font-bold">Total Cost</span>
+                    <span className="text-orange-400 font-bold text-sm">${todayTotalCost.toLocaleString()}</span>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => window.print()}
+                  className="w-full py-3 bg-orange-600 hover:bg-orange-500 text-black font-black text-sm rounded-xl uppercase tracking-wider cursor-pointer transition-colors"
+                >
+                  PRINT REPORT
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
