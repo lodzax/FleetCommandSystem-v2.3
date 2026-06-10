@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { useFleet } from '../context/FleetContext';
 import { Layout } from '../components/NavigationSidebar';
-import { Plus, Search, Star, Phone, Mail, FileCheck2, UserCheck, Shield, X, Award, Truck as TruckIcon, Trash2 } from 'lucide-react';
+import { Plus, Search, Star, Phone, Mail, FileCheck2, UserCheck, Shield, X, Award, Truck as TruckIcon, Trash2, Pencil } from 'lucide-react';
 import { Driver, DriverStatus } from '../types';
 import { compressAndGetBase64 } from '../utils/compress';
 
 export const Drivers: React.FC = () => {
-  const { drivers, trucks, addDriver, updateDriverStatus, assignDriverToTruck, deleteDriver } = useFleet();
+  const { drivers, trucks, addDriver, updateDriver, updateDriverStatus, assignDriverToTruck, deleteDriver } = useFleet();
 
   const [search, setSearch] = useState('');
   const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null);
@@ -15,13 +15,21 @@ export const Drivers: React.FC = () => {
 
   // Form inputs
   const [name, setName] = useState('');
-  const [licenseClass, setLicenseClass] = useState('Class 2 Heavy Duty');
+  const [licenseClass, setLicenseClass] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [idNumber, setIdNumber] = useState('');
   const [avatar, setAvatar] = useState('');
   const [enrollTruckId, setEnrollTruckId] = useState('');
   const [isVerified, setIsVerified] = useState(true);
+
+  // Edit modal states
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editLicenseClass, setEditLicenseClass] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editIdNumber, setEditIdNumber] = useState('');
 
   // Selected driver assign truck inputs
   const [assignTruckId, setAssignTruckId] = useState('');
@@ -36,13 +44,7 @@ export const Drivers: React.FC = () => {
   const handleAddDriver = (e: React.FormEvent) => {
     e.preventDefault();
     const generatedId = idNumber || `ID-${Math.floor(100000 + Math.random() * 900000)}`;
-    const randomAvatars = [
-      'https://images.unsplash.com/photo-150705211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=150',
-      'https://images.unsplash.com/photo-1628157582853-a796fa650a6a?auto=format&fit=crop&q=80&w=150',
-      'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=150',
-      'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&q=80&w=150'
-    ];
-    const finalAvatar = avatar || randomAvatars[Math.floor(Math.random() * randomAvatars.length)];
+    const finalAvatar = avatar || undefined;
 
     addDriver({
       name,
@@ -57,7 +59,7 @@ export const Drivers: React.FC = () => {
 
     // Reset Form
     setName('');
-    setLicenseClass('Class 2 Heavy Duty');
+    setLicenseClass('');
     setPhone('');
     setEmail('');
     setIdNumber('');
@@ -79,6 +81,29 @@ export const Drivers: React.FC = () => {
     setTimeout(() => {
       setSelectedDriver(drivers.find(d => d.id === dId) || null);
     }, 100);
+  };
+
+  const openEditModal = (d: Driver) => {
+    setEditName(d.name);
+    setEditLicenseClass(d.licenseClass);
+    setEditPhone(d.phone);
+    setEditEmail(d.email);
+    setEditIdNumber(d.idNumber || '');
+    setShowEditModal(true);
+  };
+
+  const handleEditDriver = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedDriver) return;
+    updateDriver(selectedDriver.id, {
+      name: editName,
+      licenseClass: editLicenseClass,
+      phone: editPhone,
+      email: editEmail,
+      idNumber: editIdNumber
+    });
+    setSelectedDriver(prev => prev ? { ...prev, name: editName, licenseClass: editLicenseClass, phone: editPhone, email: editEmail, idNumber: editIdNumber } : null);
+    setShowEditModal(false);
   };
 
   const selectedDriverTruck = selectedDriver ? trucks.find(t => t.id === selectedDriver.assignedTruckId) : null;
@@ -265,6 +290,13 @@ export const Drivers: React.FC = () => {
                       <span className="text-zinc-300 font-semibold truncate max-w-[170px]">{selectedDriver.email}</span>
                     </div>
                   </div>
+                  <button
+                    onClick={() => openEditModal(selectedDriver)}
+                    className="w-full mt-2 py-1.5 bg-zinc-900 hover:bg-orange-600/20 border border-zinc-800 hover:border-orange-500/40 text-zinc-400 hover:text-orange-400 font-mono text-[10px] font-bold rounded transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <Pencil size={11} />
+                    <span>Edit Details</span>
+                  </button>
                 </div>
 
                 {/* Dynamic Status Adjust */}
@@ -425,7 +457,7 @@ export const Drivers: React.FC = () => {
                 <input
                   type="text"
                   required
-                  placeholder="e.g., Farai Moyo"
+                  placeholder="Driver full name"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   className="w-full bg-[#0c0f1d] border border-zinc-850 p-2.5 rounded text-zinc-200 outline-none focus:border-orange-500"
@@ -463,7 +495,7 @@ export const Drivers: React.FC = () => {
                 <input
                   type="email"
                   required
-                  placeholder="e.g., f.moyo@fleetcommand.co.zw"
+                  placeholder="driver@example.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full bg-[#0c0f1d] border border-zinc-850 p-2.5 rounded text-zinc-200 outline-none focus:border-orange-500 font-mono"
@@ -606,6 +638,69 @@ export const Drivers: React.FC = () => {
                 </button>
               </div>
 
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT DRIVER MODAL */}
+      {showEditModal && selectedDriver && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/80 flex items-center justify-center p-4 backdrop-blur-xs">
+          <div className="bg-[#121625] border border-zinc-800 w-full max-w-md rounded-xl shadow-2xl p-6 text-xs">
+            <div className="flex justify-between items-center pb-4 border-b border-zinc-800 mb-4">
+              <div>
+                <h3 className="text-sm font-bold text-orange-400 font-mono uppercase">Edit Driver Details</h3>
+                <p className="text-zinc-500 mt-1 font-mono">{selectedDriver.id} · {selectedDriver.name}</p>
+              </div>
+              <button onClick={() => setShowEditModal(false)} className="h-7 w-7 rounded-full bg-zinc-900 flex items-center justify-center text-zinc-400 cursor-pointer">
+                <X size={14} />
+              </button>
+            </div>
+            <form onSubmit={handleEditDriver} className="space-y-4">
+              <div>
+                <label className="block text-[11px] font-bold text-zinc-500 uppercase tracking-wider font-mono mb-1">Full Personnel Name</label>
+                <input type="text" required value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="w-full bg-[#0c0f1d] border border-zinc-850 p-2.5 rounded text-zinc-200 outline-none focus:border-orange-500" />
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-zinc-500 uppercase tracking-wider font-mono mb-1">License Class</label>
+                <select value={editLicenseClass} onChange={(e) => setEditLicenseClass(e.target.value)}
+                  className="w-full bg-[#0c0f1d] border border-zinc-850 p-2.5 rounded text-zinc-200 outline-none focus:border-orange-500 cursor-pointer">
+                  <option value="Class 2 Heavy Duty">Class 2 Heavy Duty (Default)</option>
+                  <option value="Class 2 Heavy Duty + HAZMAT">Class 2 Heavy Duty + HAZMAT Special</option>
+                  <option value="Class 4 Standard Heavy">Class 4 Standard Heavy</option>
+                  <option value="Heavy Machinery Excavator Cert">Heavy Machinery Excavator Cert</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-zinc-500 uppercase tracking-wider font-mono mb-1">Phone</label>
+                <input type="text" required value={editPhone}
+                  onChange={(e) => setEditPhone(e.target.value)}
+                  className="w-full bg-[#0c0f1d] border border-zinc-850 p-2.5 rounded text-zinc-200 font-mono outline-none focus:border-orange-500" />
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-zinc-500 uppercase tracking-wider font-mono mb-1">Email</label>
+                <input type="email" required value={editEmail}
+                  onChange={(e) => setEditEmail(e.target.value)}
+                  className="w-full bg-[#0c0f1d] border border-zinc-850 p-2.5 rounded text-zinc-200 font-mono outline-none focus:border-orange-500" />
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-zinc-500 uppercase tracking-wider font-mono mb-1">National ID Number</label>
+                <input type="text" value={editIdNumber}
+                  onChange={(e) => setEditIdNumber(e.target.value)}
+                  className="w-full bg-[#0c0f1d] border border-zinc-850 p-2.5 rounded text-zinc-200 font-mono outline-none focus:border-orange-500" />
+              </div>
+              <div className="pt-4 border-t border-zinc-800 flex justify-end gap-3 font-mono">
+                <button type="button" onClick={() => setShowEditModal(false)}
+                  className="px-4 py-2 hover:bg-zinc-850 border border-zinc-800 hover:text-white rounded font-semibold text-xs cursor-pointer">
+                  Cancel
+                </button>
+                <button type="submit"
+                  className="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-black font-semibold rounded text-xs shadow-lg cursor-pointer">
+                  Save Changes
+                </button>
+              </div>
             </form>
           </div>
         </div>

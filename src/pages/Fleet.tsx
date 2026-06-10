@@ -4,7 +4,7 @@ import { Layout } from '../components/NavigationSidebar';
 import { 
   Plus, Search, ShieldAlert, CheckCircle, Wrench, AlertTriangle, 
   Settings, Truck as TruckIcon, Gauge, Hammer, Sparkles, X, UserCheck, Trash2,
-  MapPin, Satellite, Navigation, Battery, Signal, ExternalLink, Smartphone
+  MapPin, Satellite, Navigation, Battery, Signal, ExternalLink, Smartphone, Pencil
 } from 'lucide-react';
 import { Truck, TruckStatus } from '../types';
 import { compressAndGetBase64 } from '../utils/compress';
@@ -12,13 +12,18 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
 export const Fleet: React.FC = () => {
-  const { trucks, drivers, addTruck, updateTruckStatus, assignDriverToTruck, deleteTruck, branches } = useFleet();
+  const { trucks, drivers, addTruck, updateTruck, updateTruckStatus, assignDriverToTruck, deleteTruck, branches } = useFleet();
 
   const [viewTab, setViewTab] = useState<'roster' | 'tracking'>('roster');
   const [search, setSearch] = useState('');
   const [selectedTruck, setSelectedTruck] = useState<Truck | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [vehicleFilter, setVehicleFilter] = useState<'All' | 'Truck' | 'Light Vehicle'>('All');
+  const [showLightVehicleModal, setShowLightVehicleModal] = useState(false);
+  const [lvPlate, setLvPlate] = useState('');
+  const [lvType, setLvType] = useState('');
+  const [lvModel, setLvModel] = useState('');
   const mapRef = useRef<HTMLDivElement>(null);
   const leafletMap = useRef<L.Map | null>(null);
   const markersRef = useRef<L.Marker[]>([]);
@@ -26,61 +31,54 @@ export const Fleet: React.FC = () => {
   // Form states
   const [plateNumber, setPlateNumber] = useState('');
   const [type, setType] = useState('');
-  const [model, setModel] = useState('Scania 2025 Model');
-  const [capacity, setCapacity] = useState('40 Tons');
-  const [fuelRate, setFuelRate] = useState(35);
-  const [locationPreset, setLocationPreset] = useState(0); // Index for starting location coordinates selection
+  const [model, setModel] = useState('');
+  const [capacity, setCapacity] = useState('');
+  const [fuelRate, setFuelRate] = useState(0);
+  const [locationPreset, setLocationPreset] = useState(0);
   const [useCustomLocation, setUseCustomLocation] = useState(false);
   const [customLocationName, setCustomLocationName] = useState('');
-  const [customLat, setCustomLat] = useState(-17.8252);
-  const [customLng, setCustomLng] = useState(31.0530);
+  const [customLat, setCustomLat] = useState(0);
+  const [customLng, setCustomLng] = useState(0);
   const [imageUrl, setImageUrl] = useState('');
   const [trackerImei, setTrackerImei] = useState('');
-  const [trackerModel, setTrackerModel] = useState('EH002 GPS Vehicle Tracker');
+  const [trackerModel, setTrackerModel] = useState('');
   const [trackerSimCard, setTrackerSimCard] = useState('');
 
-  // Selected truck assign driver states
   const [assignDriverId, setAssignDriverId] = useState('');
 
-  // Fallback defaults if no branches exist
-  const FALLBACK_PRESETS = [
-    { name: "Harare Hub", lat: -17.8252, lng: 31.0530 },
-    { name: "Bulawayo Station", lat: -20.1406, lng: 28.5856 },
-    { name: "Gweru Depot", lat: -19.4500, lng: 29.8167 },
-    { name: "Hwange Mine site", lat: -18.3647, lng: 26.5000 },
-    { name: "Ngezi Platinum Shaft", lat: -18.6657, lng: 30.3473 }
-  ];
+  // Edit truck modal states
+  const [showEditTruckModal, setShowEditTruckModal] = useState(false);
+  const [editPlate, setEditPlate] = useState('');
+  const [editType, setEditType] = useState('');
+  const [editModel, setEditModel] = useState('');
+  const [editCapacity, setEditCapacity] = useState('');
+  const [editFuelRate, setEditFuelRate] = useState(0);
+  const [editTrackerImei, setEditTrackerImei] = useState('');
+  const [editTrackerModel, setEditTrackerModel] = useState('');
+  const [editTrackerSim, setEditTrackerSim] = useState('');
 
-  // Combine user-defined branches with fallbacks
   const availableStations = branches && branches.length > 0 
     ? branches.map(b => ({ name: b.name, lat: b.lat, lng: b.lng }))
-    : FALLBACK_PRESETS;
+    : [];
 
   // Search
-  const filteredTrucks = trucks.filter(t => 
-    t.plateNumber.toLowerCase().includes(search.toLowerCase()) || 
-    t.id.toLowerCase().includes(search.toLowerCase()) ||
-    t.type.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredTrucks = trucks.filter(t => {
+    const matchesSearch = t.plateNumber.toLowerCase().includes(search.toLowerCase()) || 
+      t.id.toLowerCase().includes(search.toLowerCase()) ||
+      t.type.toLowerCase().includes(search.toLowerCase());
+    const matchesCategory = vehicleFilter === 'All' || (t.category || 'Truck') === vehicleFilter;
+    return matchesSearch && matchesCategory;
+  });
 
   const handleAddTruck = (e: React.FormEvent) => {
     e.preventDefault();
     
-    let lat = -17.8252;
-    let lng = 31.0530;
-    
-    if (useCustomLocation) {
-      lat = customLat;
-      lng = customLng;
-    } else {
-      const selectedPreset = availableStations[locationPreset] || availableStations[0];
-      lat = selectedPreset.lat;
-      lng = selectedPreset.lng;
-    }
+    let lat = useCustomLocation ? customLat : (availableStations[locationPreset]?.lat || 0);
+    let lng = useCustomLocation ? customLng : (availableStations[locationPreset]?.lng || 0);
 
     addTruck({
       plateNumber,
-      type: type || "CAT 777G Heavy Dumper",
+      type,
       model,
       capacity,
       fuelRate,
@@ -95,16 +93,34 @@ export const Fleet: React.FC = () => {
     // Reset Form
     setPlateNumber('');
     setType('');
-    setModel('Scania 2025 Model');
-    setCapacity('40 Tons');
-    setFuelRate(35);
+    setModel('');
+    setCapacity('');
+    setFuelRate(0);
     setLocationPreset(0);
     setUseCustomLocation(false);
     setImageUrl('');
     setTrackerImei('');
     setTrackerSimCard('');
-    setTrackerModel('EH002 GPS Vehicle Tracker');
+    setTrackerModel('');
     setShowAddModal(false);
+  };
+
+  const handleAddLightVehicle = (e: React.FormEvent) => {
+    e.preventDefault();
+    addTruck({
+      plateNumber: lvPlate,
+      type: lvType,
+      model: lvModel,
+      capacity: '-',
+      fuelRate: 0,
+      currentLat: 0,
+      currentLng: 0,
+      category: 'Light Vehicle'
+    });
+    setLvPlate('');
+    setLvType('');
+    setLvModel('');
+    setShowLightVehicleModal(false);
   };
 
   const handleDriverAssignment = (e: React.FormEvent) => {
@@ -119,6 +135,45 @@ export const Fleet: React.FC = () => {
     setTimeout(() => {
       setSelectedTruck(trucks.find(t => t.id === tId) || null);
     }, 120);
+  };
+
+  const openEditTruckModal = (t: Truck) => {
+    setEditPlate(t.plateNumber);
+    setEditType(t.type);
+    setEditModel(t.model);
+    setEditCapacity(t.capacity);
+    setEditFuelRate(t.fuelRate);
+    setEditTrackerImei(t.trackerImei || '');
+    setEditTrackerModel(t.trackerModel || '');
+    setEditTrackerSim(t.trackerSimCard || '');
+    setShowEditTruckModal(true);
+  };
+
+  const handleEditTruck = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedTruck) return;
+    updateTruck(selectedTruck.id, {
+      plateNumber: editPlate,
+      type: editType,
+      model: editModel,
+      capacity: editCapacity,
+      fuelRate: editFuelRate,
+      trackerImei: editTrackerImei || undefined,
+      trackerModel: editTrackerImei ? editTrackerModel : undefined,
+      trackerSimCard: editTrackerImei ? editTrackerSim || undefined : undefined
+    });
+    setSelectedTruck(prev => prev ? {
+      ...prev,
+      plateNumber: editPlate,
+      type: editType,
+      model: editModel,
+      capacity: editCapacity,
+      fuelRate: editFuelRate,
+      trackerImei: editTrackerImei || undefined,
+      trackerModel: editTrackerImei ? editTrackerModel : undefined,
+      trackerSimCard: editTrackerImei ? editTrackerSim || undefined : undefined
+    } : null);
+    setShowEditTruckModal(false);
   };
 
   const selectedTruckDriver = selectedTruck ? drivers.find(d => d.id === selectedTruck.driverId) : null;
@@ -211,23 +266,46 @@ export const Fleet: React.FC = () => {
 
           {viewTab === 'roster' && (
             <>
+              <div className="flex gap-1 bg-[#0c0f1d] p-1 rounded-lg border border-zinc-800/60">
+                <button onClick={() => setVehicleFilter('All')}
+                  className={`px-3 py-1 rounded text-[10px] font-mono font-bold tracking-wider transition-all cursor-pointer ${
+                    vehicleFilter === 'All' ? 'bg-orange-600 text-black shadow' : 'text-zinc-400 hover:text-zinc-200'
+                  }`}>ALL</button>
+                <button onClick={() => setVehicleFilter('Truck')}
+                  className={`px-3 py-1 rounded text-[10px] font-mono font-bold tracking-wider transition-all cursor-pointer ${
+                    vehicleFilter === 'Truck' ? 'bg-orange-600 text-black shadow' : 'text-zinc-400 hover:text-zinc-200'
+                  }`}>TRUCKS</button>
+                <button onClick={() => setVehicleFilter('Light Vehicle')}
+                  className={`px-3 py-1 rounded text-[10px] font-mono font-bold tracking-wider transition-all cursor-pointer ${
+                    vehicleFilter === 'Light Vehicle' ? 'bg-orange-600 text-black shadow' : 'text-zinc-400 hover:text-zinc-200'
+                  }`}>LIGHT VEHICLES</button>
+              </div>
               <div className="relative w-full sm:w-72">
                 <input
                   type="text"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search machine code or plates..."
+                  placeholder="Search by plate or type..."
                   className="w-full bg-[#0c0f1d] border border-zinc-850 text-xs px-3.5 py-2 pl-9 rounded-lg focus:border-zinc-700 text-zinc-200 outline-none placeholder-zinc-500 font-mono"
                 />
                 <Search className="absolute left-3 top-2.5 text-zinc-555" size={14} />
               </div>
-              <button
-                onClick={() => setShowAddModal(true)}
-                className="w-full sm:w-auto px-4 py-2 bg-orange-600 hover:bg-orange-500 text-black font-semibold text-xs tracking-wider rounded-lg flex items-center justify-center gap-1.5 transition-all shadow-md shadow-orange-500/10 cursor-pointer"
-              >
-                <Plus size={15} />
-                <span>Commission Truck</span>
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowAddModal(true)}
+                  className="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-black font-semibold text-xs tracking-wider rounded-lg flex items-center justify-center gap-1.5 transition-all shadow-md shadow-orange-500/10 cursor-pointer"
+                >
+                  <Plus size={15} />
+                  <span>Commission Truck</span>
+                </button>
+                <button
+                  onClick={() => setShowLightVehicleModal(true)}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-black font-semibold text-xs tracking-wider rounded-lg flex items-center justify-center gap-1.5 transition-all shadow-md shadow-emerald-500/10 cursor-pointer"
+                >
+                  <Plus size={15} />
+                  <span>Commission Vehicle</span>
+                </button>
+              </div>
             </>
           )}
 
@@ -340,12 +418,12 @@ export const Fleet: React.FC = () => {
             {/* LEFT: ROSTER LISTING */}
             <div className="lg:col-span-2 bg-[#101424] border border-zinc-800 rounded-xl p-6">
             <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 font-mono pb-3 border-b border-zinc-800 mb-4">
-              ACTIVE HEAVY MACHINERY LEDGER ({filteredTrucks.length})
+              FLEET REGISTER ({filteredTrucks.length})
             </h3>
 
             <div className="overflow-y-auto max-h-[640px] pr-1">
               {filteredTrucks.length === 0 ? (
-                <div className="text-center py-16 text-zinc-500 font-medium font-mono">No logistics machinery platforms registered.</div>
+                <div className="text-center py-16 text-zinc-500 font-medium font-mono">No vehicles registered.</div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {filteredTrucks.map(t => {
@@ -382,8 +460,8 @@ export const Fleet: React.FC = () => {
                           ) : (
                             <div className="flex flex-col items-center justify-center space-y-1 z-10">
                               <span className="text-3xl filter drop-shadow">
-                                {t.type.includes('Dump') || t.type.includes('Dumper') ? '🚧' : 
-                                 t.type.includes('Tipper') ? 'Tipper' === 'Tipper' ? '🚛' : '🚛' : 
+                                {(t.category || 'Truck') === 'Light Vehicle' ? '🚗' :
+                                 t.type.includes('Dump') || t.type.includes('Dumper') ? '🚧' : 
                                  t.type.includes('Flatbed') ? '🚚' : '🚛'}
                               </span>
                               <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest font-mono bg-zinc-900/80 px-2 py-0.5 rounded border border-zinc-800">
@@ -392,10 +470,14 @@ export const Fleet: React.FC = () => {
                             </div>
                           )}
 
-                          {/* Decorative overlay corner warning strip */}
+                          {/* Decorative overlay corner strip */}
                           <div className="absolute top-0 right-0 h-10 w-10 overflow-hidden pointer-events-none">
-                            <div className="bg-gradient-to-r from-yellow-500 to-amber-600 text-black text-[7px] font-bold font-mono py-1 text-center uppercase tracking-wider block rotate-45 translate-x-3 -translate-y-0.5 w-16">
-                              HAULER
+                            <div className={`text-black text-[7px] font-bold font-mono py-1 text-center uppercase tracking-wider block rotate-45 translate-x-3 -translate-y-0.5 w-16 ${
+                              (t.category || 'Truck') === 'Light Vehicle'
+                                ? 'bg-gradient-to-r from-emerald-500 to-teal-600'
+                                : 'bg-gradient-to-r from-yellow-500 to-amber-600'
+                            }`}>
+                              {(t.category || 'Truck') === 'Light Vehicle' ? 'VEHICLE' : 'HAULER'}
                             </div>
                           </div>
 
@@ -409,10 +491,12 @@ export const Fleet: React.FC = () => {
                             <span className="text-[8px] font-bold font-mono uppercase tracking-wider text-zinc-300">{t.status}</span>
                           </div>
 
-                          {/* Capacity Badge */}
-                          <div className="absolute bottom-2 right-2 bg-zinc-950/95 text-orange-400 font-mono text-[9px] font-black px-1.5 py-0.5 rounded border border-zinc-800 shadow-sm">
-                            CAP: {t.capacity}
-                          </div>
+                          {/* Capacity Badge (hide for light vehicles) */}
+                          {(t.category || 'Truck') !== 'Light Vehicle' && (
+                            <div className="absolute bottom-2 right-2 bg-zinc-950/95 text-orange-400 font-mono text-[9px] font-black px-1.5 py-0.5 rounded border border-zinc-800 shadow-sm">
+                              CAP: {t.capacity}
+                            </div>
+                          )}
                         </div>
 
                         {/* Mid Section: Essential Details */}
@@ -430,17 +514,23 @@ export const Fleet: React.FC = () => {
                           {/* Specs horizontal layout */}
                           <div className="grid grid-cols-2 gap-2 pt-2 border-t border-zinc-800/40 text-[10px] text-zinc-400 font-mono">
                             <div className="space-y-0.5 bg-zinc-950/20 p-1.5 rounded border border-zinc-900 shadow-xs">
-                              <span className="text-zinc-550 block text-[8px] uppercase font-sans">Current Mileage</span>
+                              <span className="text-zinc-550 block text-[8px] uppercase font-sans">{(t.category || 'Truck') === 'Light Vehicle' ? 'Make / Model' : 'Current Mileage'}</span>
                               <div className="flex items-center gap-1">
-                                <span className="font-bold text-zinc-300">{t.mileage.toLocaleString()} km</span>
-                                {isOverdue && (
-                                  <span className="bg-red-650/20 text-red-500 border border-red-500/10 px-0.5 rounded text-[8px] font-bold cursor-help" title="Immediate Service Overdue!">!</span>
+                                {(t.category || 'Truck') === 'Light Vehicle' ? (
+                                  <span className="font-bold text-zinc-300">{t.model || '-'}</span>
+                                ) : (
+                                  <>
+                                    <span className="font-bold text-zinc-300">{t.mileage.toLocaleString()} km</span>
+                                    {isOverdue && (
+                                      <span className="bg-red-650/20 text-red-500 border border-red-500/10 px-0.5 rounded text-[8px] font-bold cursor-help" title="Immediate Service Overdue!">!</span>
+                                    )}
+                                  </>
                                 )}
                               </div>
                             </div>
                             <div className="space-y-0.5 bg-zinc-950/20 p-1.5 rounded border border-zinc-900 shadow-xs">
-                              <span className="text-zinc-550 block text-[8px] uppercase font-sans">Fuel Burn Rate</span>
-                              <span className="font-bold text-zinc-300">{t.fuelRate} L/100km</span>
+                              <span className="text-zinc-550 block text-[8px] uppercase font-sans">{(t.category || 'Truck') === 'Light Vehicle' ? 'Plate Number' : 'Fuel Burn Rate'}</span>
+                              <span className="font-bold text-zinc-300">{(t.category || 'Truck') === 'Light Vehicle' ? t.plateNumber : `${t.fuelRate} L/100km`}</span>
                             </div>
                           </div>
                         </div>
@@ -510,6 +600,17 @@ export const Fleet: React.FC = () => {
                       </button>
                     ))}
                   </div>
+                </div>
+
+                {/* Edit Details */}
+                <div className="border-t border-zinc-850 pt-4">
+                  <button
+                    onClick={() => openEditTruckModal(selectedTruck)}
+                    className="w-full py-1.5 bg-zinc-900 hover:bg-orange-600/20 border border-zinc-800 hover:border-orange-500/40 text-zinc-400 hover:text-orange-400 font-mono text-[10px] font-bold rounded transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <Pencil size={11} />
+                    <span>Edit Vehicle Details</span>
+                  </button>
                 </div>
 
                 {/* Telemetry diagnostics stats */}
@@ -745,7 +846,7 @@ export const Fleet: React.FC = () => {
                   <input
                     type="text"
                     required
-                    placeholder="e.g., CAT 777G Dump Truck"
+                    placeholder="Truck type (e.g. Dump Truck)"
                     value={type}
                     onChange={(e) => setType(e.target.value)}
                     className="w-full bg-[#0c0f1d] border border-zinc-850 p-2.5 rounded text-zinc-200 outline-none focus:border-orange-500"
@@ -904,7 +1005,7 @@ export const Fleet: React.FC = () => {
                       <input
                         type="text"
                         required
-                        placeholder="e.g., Beitbridge Border Depot"
+                        placeholder="Location name"
                         value={customLocationName}
                         onChange={(e) => setCustomLocationName(e.target.value)}
                         className="w-full bg-[#0c0f1d] border border-zinc-850 p-1.5 mt-0.5 rounded text-zinc-200 outline-none focus:border-orange-500"
@@ -1004,6 +1105,162 @@ export const Fleet: React.FC = () => {
                 </button>
               </div>
 
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT TRUCK MODAL */}
+      {showEditTruckModal && selectedTruck && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/80 flex items-center justify-center p-4 backdrop-blur-xs">
+          <div className="bg-[#121625] border border-zinc-800 w-full max-w-md rounded-xl shadow-2xl p-6 text-xs">
+            <div className="flex justify-between items-center pb-4 border-b border-zinc-800 mb-4">
+              <div>
+                <h3 className="text-sm font-bold text-orange-400 font-mono uppercase">Edit Vehicle Details</h3>
+                <p className="text-zinc-500 mt-1 font-mono">{selectedTruck.id} · {selectedTruck.plateNumber}</p>
+              </div>
+              <button onClick={() => setShowEditTruckModal(false)} className="h-7 w-7 rounded-full bg-zinc-900 flex items-center justify-center text-zinc-400 cursor-pointer">
+                <X size={14} />
+              </button>
+            </div>
+            <form onSubmit={handleEditTruck} className="space-y-4">
+              <div>
+                <label className="block text-[11px] font-bold text-zinc-500 uppercase tracking-wider font-mono mb-1">License Plate</label>
+                <input type="text" required value={editPlate}
+                  onChange={(e) => setEditPlate(e.target.value.toUpperCase())}
+                  className="w-full bg-[#0c0f1d] border border-zinc-850 p-2.5 rounded text-zinc-200 font-mono outline-none focus:border-orange-500" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[11px] font-bold text-zinc-500 uppercase tracking-wider font-mono mb-1">Type</label>
+                  <input type="text" required value={editType}
+                    onChange={(e) => setEditType(e.target.value)}
+                    className="w-full bg-[#0c0f1d] border border-zinc-850 p-2.5 rounded text-zinc-200 outline-none focus:border-orange-500" />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-zinc-500 uppercase tracking-wider font-mono mb-1">Model</label>
+                  <input type="text" required value={editModel}
+                    onChange={(e) => setEditModel(e.target.value)}
+                    className="w-full bg-[#0c0f1d] border border-zinc-850 p-2.5 rounded text-zinc-200 outline-none focus:border-orange-500" />
+                </div>
+              </div>
+              {(selectedTruck.category || 'Truck') !== 'Light Vehicle' && (
+                <div className="grid grid-cols-2 gap-4 font-mono">
+                  <div>
+                    <label className="block text-[11px] font-bold text-zinc-500 uppercase tracking-wider font-mono mb-1">Capacity</label>
+                    <select value={editCapacity} onChange={(e) => setEditCapacity(e.target.value)}
+                      className="w-full bg-[#0c0f1d] border border-zinc-850 p-2.5 rounded text-zinc-200 outline-none focus:border-orange-500 cursor-pointer">
+                      <option value="30 Tons">30 Tons</option>
+                      <option value="40 Tons">40 Tons</option>
+                      <option value="45 Tons">45 Tons</option>
+                      <option value="60 Tons">60 Tons</option>
+                      <option value="100 Tons">100 Tons</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-zinc-500 uppercase tracking-wider font-mono mb-1">Fuel Rate (L/100km)</label>
+                    <input type="number" min="1" max="100" required value={editFuelRate}
+                      onChange={(e) => setEditFuelRate(parseInt(e.target.value) || 0)}
+                      className="w-full bg-[#0c0f1d] border border-zinc-850 p-2.5 rounded text-zinc-200 outline-none focus:border-orange-500" />
+                  </div>
+                </div>
+              )}
+              <div className="border-t border-zinc-800 pt-3 space-y-3">
+                <label className="text-[11px] font-bold text-orange-500 uppercase tracking-wider font-mono flex items-center gap-1.5">
+                  <Satellite size={12} /> GPS Tracker
+                </label>
+                <div className="grid grid-cols-2 gap-3 font-mono">
+                  <div>
+                    <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1">IMEI</label>
+                    <input type="text" value={editTrackerImei}
+                      onChange={(e) => setEditTrackerImei(e.target.value)}
+                      className="w-full bg-[#0c0f1d] border border-zinc-850 p-2 rounded text-zinc-200 outline-none focus:border-orange-500 text-[11px]" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1">Model</label>
+                    <select value={editTrackerModel} onChange={(e) => setEditTrackerModel(e.target.value)}
+                      className="w-full bg-[#0c0f1d] border border-zinc-850 p-2 rounded text-zinc-200 outline-none focus:border-orange-500 text-[11px] cursor-pointer">
+                      <option value="EH002 GPS Vehicle Tracker">EH002</option>
+                      <option value="EH003 GPS Vehicle Tracker">EH003</option>
+                      <option value="ET006 GPS Vehicle Tracker">ET006</option>
+                      <option value="IP67 Waterproof GPS Vehicle Tracker">IP67</option>
+                      <option value="OBD GPS Vehicle Tracker">OBD</option>
+                      <option value="Relay GPS Vehicle Tracker">Relay</option>
+                      <option value="Fuel Sensor GPS Vehicle Tracker">Fuel Sensor</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider font-mono mb-1">SIM Card</label>
+                  <input type="text" value={editTrackerSim}
+                    onChange={(e) => setEditTrackerSim(e.target.value)}
+                    className="w-full bg-[#0c0f1d] border border-zinc-850 p-2 rounded text-zinc-200 outline-none focus:border-orange-500 text-[11px] font-mono" />
+                </div>
+              </div>
+              <div className="pt-4 border-t border-zinc-800 flex justify-end gap-3 font-mono">
+                <button type="button" onClick={() => setShowEditTruckModal(false)}
+                  className="px-4 py-2 hover:bg-zinc-850 border border-zinc-800 hover:text-white rounded font-semibold text-xs cursor-pointer">
+                  Cancel
+                </button>
+                <button type="submit"
+                  className="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-black font-semibold rounded text-xs shadow-lg cursor-pointer">
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* LIGHT VEHICLE MODAL */}
+      {showLightVehicleModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/80 flex items-center justify-center p-4 backdrop-blur-xs">
+          <div className="bg-[#121625] border border-zinc-800 w-full max-w-md rounded-xl shadow-2xl p-6 text-xs">
+            <div className="flex justify-between items-center pb-4 border-b border-zinc-800 mb-4">
+              <div>
+                <h3 className="text-sm font-bold text-emerald-400 font-mono uppercase">Commission Light Vehicle</h3>
+                <p className="text-zinc-500 mt-1">Register a sedan, pick-up, or panel van</p>
+              </div>
+              <button onClick={() => setShowLightVehicleModal(false)} className="h-7 w-7 rounded-full bg-zinc-900 flex items-center justify-center text-zinc-400 cursor-pointer">
+                <X size={14} />
+              </button>
+            </div>
+            <form onSubmit={handleAddLightVehicle} className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider font-mono mb-1">License Plate</label>
+                <input required value={lvPlate} onChange={(e) => setLvPlate(e.target.value)}
+                  placeholder="e.g., ABC-1234"
+                  className="w-full bg-[#0c0f1d] border border-zinc-850 p-2.5 rounded text-zinc-200 font-mono" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider font-mono mb-1">Vehicle Type</label>
+                <select required value={lvType} onChange={(e) => setLvType(e.target.value)}
+                  className="w-full bg-[#0c0f1d] border border-zinc-850 p-2.5 rounded text-zinc-200 cursor-pointer">
+                  <option value="">-- Select Type --</option>
+                  <option value="Sedan">Sedan</option>
+                  <option value="Pick-Up">Pick-Up</option>
+                  <option value="Panel Van">Panel Van</option>
+                  <option value="SUV">SUV</option>
+                  <option value="Double Cab">Double Cab</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider font-mono mb-1">Make / Model</label>
+                <input value={lvModel} onChange={(e) => setLvModel(e.target.value)}
+                  placeholder="e.g., Toyota Hilux 2023"
+                  className="w-full bg-[#0c0f1d] border border-zinc-850 p-2.5 rounded text-zinc-200 font-mono" />
+              </div>
+              <div className="pt-4 border-t border-zinc-800 flex justify-end gap-3 font-mono">
+                <button type="button" onClick={() => setShowLightVehicleModal(false)}
+                  className="px-4 py-2 hover:bg-zinc-850 border border-zinc-800 hover:text-white rounded text-xs cursor-pointer">
+                  Cancel
+                </button>
+                <button type="submit"
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-black font-semibold rounded text-xs shadow-lg cursor-pointer">
+                  Register Vehicle
+                </button>
+              </div>
             </form>
           </div>
         </div>

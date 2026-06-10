@@ -2,18 +2,16 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import QRCode from 'qrcode';
 import { api, setToken } from '../api';
 import { 
-  User, Truck, Driver, Job, MaintenanceRecord, FuelLog, FuelRequisition, UserActivity, Branch, DispatchRecord, StockMovement 
+  User, Truck, Driver, Job, MaintenanceRecord, FuelLog, FuelRequisition, UserActivity, Branch, DispatchRecord, StockMovement, FuelBalanceLog 
 } from '../types';
 import { 
   INITIAL_USERS, INITIAL_TRUCKS, INITIAL_DRIVERS, INITIAL_JOBS, 
   INITIAL_MAINTENANCE, INITIAL_FUEL_LOGS, INITIAL_REQUISITIONS, INITIAL_ACTIVITIES 
 } from '../data/mockData';
 
-export const INITIAL_BRANCHES: Branch[] = [
-  { id: 'BR-101', name: 'Hwange Central Depot', locationName: 'Hwange Mining Zone', lat: -18.3647, lng: 26.5000, phone: '+263 81 22345', manager: 'Alfred Moyo' },
-  { id: 'BR-102', name: 'Bulawayo Transit Depot', locationName: 'Bulawayo Industrial', lat: -20.1500, lng: 28.5833, phone: '+263 9 77890', manager: 'Sipho Ndlovu' },
-  { id: 'BR-103', name: 'Harare HQ Dispatch', locationName: 'Harare Central', lat: -17.8292, lng: 31.0522, phone: '+263 4 489320', manager: 'Grace Kabasa' },
-];
+export const INITIAL_BRANCHES: Branch[] = [];
+
+const DATA_VERSION = '2.4.0-clean';
 
 interface FleetContextType {
   users: User[];
@@ -37,9 +35,11 @@ interface FleetContextType {
   revokeUser: (id: string) => void;
   deleteUser: (id: string) => void;
   addTruck: (truck: Omit<Truck, 'id' | 'mileage' | 'nextServiceMileage' | 'lastServiceDate' | 'driverId'>) => void;
+  updateTruck: (id: string, data: Partial<Truck>) => void;
   updateTruckStatus: (id: string, status: Truck['status']) => void;
   assignDriverToTruck: (truckId: string, driverId: string | null) => void;
   addDriver: (driver: Omit<Driver, 'id' | 'assignedTruckId' | 'tripsCompleted' | 'rating' | 'lastActive'>) => void;
+  updateDriver: (id: string, data: Partial<Driver>) => void;
   updateDriverStatus: (id: string, status: Driver['status']) => void;
   addJob: (job: Omit<Job, 'id' | 'status' | 'fuelAllocated'>) => void;
   assignJob: (jobId: string, driverId: string, truckId: string) => void;
@@ -49,10 +49,12 @@ interface FleetContextType {
   addFuelLog: (log: Omit<FuelLog, 'id' | 'date'>) => void;
   addFuelRequisition: (req: Omit<FuelRequisition, 'id' | 'status' | 'dateRequested'>) => void;
   updateRequisitionStatus: (id: string, status: FuelRequisition['status']) => void;
+  editRequisitionQuantity: (id: string, litresRequested: number, estimatedCost: number) => void;
   reviewRequisition: (id: string) => void;
+  verifyRequisition: (id: string) => void;
   approveRequisition: (id: string) => Promise<void>;
   rejectRequisition: (id: string, reason: string) => void;
-  redeemRequisition: (id: string, redeemData: { redeemedByGasStation: string; redeemedAttendantSignature: string; redeemedActualLitres: number; redeemedActualCost: number }) => void;
+  redeemRequisition: (id: string, redeemData: { redeemedByGasStation: string; redeemedAttendantSignature: string; redeemedActualLitres: number; redeemedActualCost: number; odometer: number }) => void;
   addBranch: (branch: Omit<Branch, 'id'>) => void;
   setTheme: (t: string) => void;
   setLogoText: (l: string) => void;
@@ -74,12 +76,24 @@ interface FleetContextType {
   clearDispatchData: () => void;
   prepaidFuelBalance: { diesel: number; petrol: number };
   setPrepaidFuelBalance: (balance: { diesel: number; petrol: number }) => void;
+  fuelBalanceLogs: FuelBalanceLog[];
+  setFuelBalanceLogs: React.Dispatch<React.SetStateAction<FuelBalanceLog[]>>;
 }
 
 const FleetContext = createContext<FleetContextType | undefined>(undefined);
 
 export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Helper to load or fallback
+  // Clear stale localStorage if data version changed
+  if (localStorage.getItem('fc_dataVersion') !== DATA_VERSION) {
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('fc_') && k !== 'fc_activeUser') keysToRemove.push(k);
+    }
+    keysToRemove.forEach(k => localStorage.removeItem(k));
+    localStorage.setItem('fc_dataVersion', DATA_VERSION);
+  }
+
   const getStored = <T,>(key: string, initial: T): T => {
     const val = localStorage.getItem(`fc_${key}`);
     return val ? JSON.parse(val) : initial;
@@ -109,6 +123,7 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [branches, setBranches] = useState<Branch[]>(() => getStored('branches', INITIAL_BRANCHES));
   const [dispatches, setDispatches] = useState<DispatchRecord[]>(() => getStored('dispatch_records', []));
   const [stockMovements, setStockMovements] = useState<StockMovement[]>(() => getStored('stock_movements', []));
+  const [fuelBalanceLogs, setFuelBalanceLogs] = useState<FuelBalanceLog[]>(() => getStored('fuel_balance_logs', []));
   const [theme, setThemeState] = useState<string>(() => localStorage.getItem('fc_theme') || 'slate');
   const [logoText, setLogoTextState] = useState<string>(() => localStorage.getItem('fc_logoText') || 'FLEETCOMMAND');
   const [logoEmoji, setLogoEmojiState] = useState<string>(() => localStorage.getItem('fc_logoEmoji') || '🚛');
@@ -132,7 +147,7 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         try { return await fn(); } catch { return fallback; }
       };
 
-      const [apiUsers, apiTrucks, apiDrivers, apiJobs, apiMaintenance, apiFuelLogs, apiReqs, apiActivities, apiBranches, apiDispatches, apiStock, apiSettings] = await Promise.all([
+      const [apiUsers, apiTrucks, apiDrivers, apiJobs, apiMaintenance, apiFuelLogs, apiReqs, apiActivities, apiBranches, apiDispatches, apiStock, apiSettings, apiFuelBalLogs] = await Promise.all([
         safeFetch(() => api.getUsers(), [] as any[]),
         safeFetch(() => api.getTrucks(), [] as any[]),
         safeFetch(() => api.getDrivers(), [] as any[]),
@@ -145,6 +160,7 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         safeFetch(() => api.getDispatches(), [] as any[]),
         safeFetch(() => api.getStockMovements(), [] as any[]),
         safeFetch(() => api.getSettings(), {} as Record<string, string>),
+        safeFetch(() => api.getFuelBalanceLogs(), [] as any[]),
       ]);
 
       setApiOnline(apiUsers.length > 0 || apiSettings && Object.keys(apiSettings).length > 0);
@@ -162,22 +178,110 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             redeemedActualLitres: r.redeemedActualLitres != null ? Number(r.redeemedActualLitres) : undefined,
             redeemedActualCost: r.redeemedActualCost != null ? Number(r.redeemedActualCost) : undefined,
           }));
-          setFuelRequisitions(prev => {
-            const apiIds = new Set(normalized.map(r => r.id));
-            const localOnly = prev.filter(r => !apiIds.has(r.id));
-            return [...normalized, ...localOnly];
-          });
+          setFuelRequisitions(normalized);
         }
         if (apiActivities.length > 0) setActivities(apiActivities);
         if (apiBranches.length > 0) setBranches(apiBranches);
         setDispatches(apiDispatches);
         setStockMovements(apiStock);
+        if (apiFuelBalLogs.length > 0) setFuelBalanceLogs(apiFuelBalLogs.map(l => ({ ...l, litres: Number(l.litres) || 0, balanceBefore: Number(l.balanceBefore) || 0, balanceAfter: Number(l.balanceAfter) || 0 })));
         if (apiSettings && apiSettings.theme) setThemeState(apiSettings.theme);
         if (apiSettings && apiSettings.logoText) setLogoTextState(apiSettings.logoText);
         if (apiSettings && apiSettings.logoEmoji) setLogoEmojiState(apiSettings.logoEmoji);
+        if (apiSettings && (apiSettings.prepaidDiesel != null || apiSettings.prepaidPetrol != null)) {
+          setPrepaidFuelBalanceState({
+            diesel: parseInt(apiSettings.prepaidDiesel) || 0,
+            petrol: parseInt(apiSettings.prepaidPetrol) || 0,
+          });
+        }
+
+        // Sync local data up to API (for data created while offline)
+        if (localStorage.getItem('fc_auth_token')) {
+          const apiTruckPlates = new Set(apiTrucks.map((t: any) => t.plateNumber));
+          for (const localTruck of trucks) {
+            if (!apiTruckPlates.has(localTruck.plateNumber)) {
+              api.saveTruck(localTruck).catch(() => {});
+            }
+          }
+          const apiDriverIds = new Set(apiDrivers.map((d: any) => d.id));
+          for (const localDriver of drivers) {
+            if (!apiDriverIds.has(localDriver.id)) {
+              api.saveDriver(localDriver).catch(() => {});
+            }
+          }
+          const apiJobIds = new Set(apiJobs.map((j: any) => j.id));
+          for (const localJob of jobs) {
+            if (!apiJobIds.has(localJob.id)) {
+              api.saveJob(localJob).catch(() => {});
+            }
+          }
+          const apiMaintenanceIds = new Set(apiMaintenance.map((m: any) => m.id));
+          for (const localM of maintenance) {
+            if (!apiMaintenanceIds.has(localM.id)) {
+              api.saveMaintenance(localM).catch(() => {});
+            }
+          }
+          const apiBranchIds = new Set(apiBranches.map((b: any) => b.id));
+          for (const localB of branches) {
+            if (!apiBranchIds.has(localB.id)) {
+              api.saveBranch(localB).catch(() => {});
+            }
+          }
+          const localPrepaid = localStorage.getItem('fc_prepaidFuel');
+          if (localPrepaid) {
+            const parsed = JSON.parse(localPrepaid);
+            api.saveSetting('prepaidDiesel', String(parsed.diesel || 0)).catch(() => {});
+            api.saveSetting('prepaidPetrol', String(parsed.petrol || 0)).catch(() => {});
+          }
+        }
     };
     loadFromApi();
   }, []);
+
+  // Re-sync local data to API whenever apiOnline becomes true
+  const prevOnline = React.useRef(false);
+  useEffect(() => {
+    if (apiOnline && !prevOnline.current) {
+      const sync = async () => {
+        const [apiTrucks, apiDrivers, apiJobs, apiMaintenance, apiBranches] = await Promise.all([
+          api.getTrucks().catch(() => []),
+          api.getDrivers().catch(() => []),
+          api.getJobs().catch(() => []),
+          api.getMaintenance().catch(() => []),
+          api.getBranches().catch(() => []),
+        ]);
+        const apiTruckPlates = new Set(apiTrucks.map((t: any) => t.plateNumber));
+        for (const localTruck of trucks) {
+          if (!apiTruckPlates.has(localTruck.plateNumber)) api.saveTruck(localTruck).catch(() => {});
+        }
+        const apiDriverIds = new Set(apiDrivers.map((d: any) => d.id));
+        for (const localDriver of drivers) {
+          if (!apiDriverIds.has(localDriver.id)) api.saveDriver(localDriver).catch(() => {});
+        }
+        const apiJobIds = new Set(apiJobs.map((j: any) => j.id));
+        for (const localJob of jobs) {
+          if (!apiJobIds.has(localJob.id)) api.saveJob(localJob).catch(() => {});
+        }
+        const apiMaintenanceIds = new Set(apiMaintenance.map((m: any) => m.id));
+        for (const localM of maintenance) {
+          if (!apiMaintenanceIds.has(localM.id)) api.saveMaintenance(localM).catch(() => {});
+        }
+        const apiBranchIds = new Set(apiBranches.map((b: any) => b.id));
+        for (const localB of branches) {
+          if (!apiBranchIds.has(localB.id)) api.saveBranch(localB).catch(() => {});
+        }
+        // Sync prepaid balance
+        const localPrepaid = localStorage.getItem('fc_prepaidFuel');
+        if (localPrepaid) {
+          const parsed = JSON.parse(localPrepaid);
+          api.saveSetting('prepaidDiesel', String(parsed.diesel || 0)).catch(() => {});
+          api.saveSetting('prepaidPetrol', String(parsed.petrol || 0)).catch(() => {});
+        }
+      };
+      sync();
+    }
+    prevOnline.current = apiOnline;
+  }, [apiOnline, trucks, drivers, jobs, maintenance, branches]);
 
   // Sync to local storage
   useEffect(() => {
@@ -191,6 +295,10 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     localStorage.setItem('fc_stock_movements', JSON.stringify(stockMovements));
   }, [stockMovements]);
+
+  useEffect(() => {
+    localStorage.setItem('fc_fuel_balance_logs', JSON.stringify(fuelBalanceLogs));
+  }, [fuelBalanceLogs]);
 
   useEffect(() => {
     localStorage.setItem('fc_theme', theme);
@@ -212,7 +320,45 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [prepaidFuelBalance]);
 
   const setPrepaidFuelBalance = (balance: { diesel: number; petrol: number }) => {
+    const prev = prepaidFuelBalance;
     setPrepaidFuelBalanceState(balance);
+    api.saveSetting('prepaidDiesel', String(balance.diesel)).catch(() => {});
+    api.saveSetting('prepaidPetrol', String(balance.petrol)).catch(() => {});
+
+    // Log diesel top-up
+    const dieselDiff = balance.diesel - prev.diesel;
+    if (dieselDiff !== 0) {
+      const log: FuelBalanceLog = {
+        id: `FBL-${Date.now()}-d`,
+        type: dieselDiff > 0 ? 'Top-Up' : 'Deduction',
+        fuelType: 'Diesel',
+        litres: Math.abs(dieselDiff),
+        balanceBefore: prev.diesel,
+        balanceAfter: balance.diesel,
+        note: dieselDiff > 0 ? 'Prepaid balance adjustment' : 'Manual deduction',
+        createdBy: activeUser?.name,
+      };
+      setFuelBalanceLogs(prevLogs => [log, ...prevLogs]);
+      api.saveFuelBalanceLog(log).catch(() => {});
+    }
+
+    // Log petrol top-up
+    const petrolDiff = balance.petrol - prev.petrol;
+    if (petrolDiff !== 0) {
+      const log: FuelBalanceLog = {
+        id: `FBL-${Date.now()}-p`,
+        type: petrolDiff > 0 ? 'Top-Up' : 'Deduction',
+        fuelType: 'Petrol',
+        litres: Math.abs(petrolDiff),
+        balanceBefore: prev.petrol,
+        balanceAfter: balance.petrol,
+        note: petrolDiff > 0 ? 'Prepaid balance adjustment' : 'Manual deduction',
+        createdBy: activeUser?.name,
+      };
+      setFuelBalanceLogs(prevLogs => [log, ...prevLogs]);
+      api.saveFuelBalanceLog(log).catch(() => {});
+    }
+
     logActivity(`Prepaid fuel balance adjusted — Diesel: ${balance.diesel}L, Petrol: ${balance.petrol}L`);
   };
 
@@ -280,7 +426,7 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const approveUser = (id: string) => {
     setUsers(prev => prev.map(u => u.id === id ? { ...u, status: 'Verified' as const } : u));
     const target = users.find(u => u.id === id);
-    if (target && apiOnline) api.updateUser(id, { ...target, status: 'Verified' }).catch(() => {});
+    if (target) api.updateUser(id, { ...target, status: 'Verified' }).catch(() => {});
     logActivity(`Verified and approved user account: ${target?.name || id}`);
   };
 
@@ -302,7 +448,7 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (prev.find(p => p.id === user.id)) return prev;
       return [...prev, user];
     });
-    if (apiOnline) api.saveUser(user).catch(() => {});
+    api.saveUser(user).catch(() => {});
     logActivity(`Added user: ${user.name}`, `Role: ${user.role}`);
   };
 
@@ -322,7 +468,7 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const deleteUser = (id: string) => {
     const target = users.find(u => u.id === id);
     setUsers(prev => prev.filter(u => u.id !== id));
-    if (apiOnline) api.deleteUser(id).catch(() => {});
+    api.deleteUser(id).catch(() => {});
     logActivity(`Deleted user account: ${target?.name || id}`);
   };
 
@@ -335,15 +481,24 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       mileage: 12000,
       nextServiceMileage: 20000,
       lastServiceDate: new Date().toISOString().split('T')[0],
-      driverId: null
+      driverId: null,
+      category: t.category || 'Truck'
     };
     setTrucks(prev => [...prev, newTruck]);
+    api.saveTruck(newTruck).catch(() => {});
     logActivity(`Registered new fleet asset: ${newId} (${t.plateNumber})`, `${t.type}`);
   };
 
   const updateTruckStatus = (id: string, status: Truck['status']) => {
     setTrucks(prev => prev.map(t => t.id === id ? { ...t, status } : t));
+    api.updateTruck(id, { status }).catch(() => {});
     logActivity(`Updated truck status: ${id} to ${status}`);
+  };
+
+  const updateTruck = (id: string, data: Partial<Truck>) => {
+    setTrucks(prev => prev.map(t => t.id === id ? { ...t, ...data } : t));
+    api.updateTruck(id, data).catch(() => {});
+    logActivity(`Updated truck details: ${id}`, JSON.stringify(data));
   };
 
   const assignDriverToTruck = (truckId: string, driverId: string | null) => {
@@ -371,6 +526,14 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return d;
     }));
 
+    if (driverId) {
+      api.updateDriver(driverId, { assignedTruckId: truckId, status: truckId ? 'Active' : 'Off Duty' }).catch(() => {});
+      if (truckId) api.updateTruck(truckId, { driverId, status: 'Active' }).catch(() => {});
+    } else {
+      const truck = trucks.find(t => t.id === truckId);
+      if (truck?.driverId) api.updateDriver(truck.driverId, { assignedTruckId: null, status: 'Off Duty' }).catch(() => {});
+      if (truckId) api.updateTruck(truckId, { driverId: null, status: 'Idle' }).catch(() => {});
+    }
     const truck = trucks.find(t => t.id === truckId);
     const driver = drivers.find(d => d.id === driverId);
     logActivity(
@@ -401,12 +564,20 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       } : t));
     }
 
+    api.saveDriver(newDriver).catch(() => {});
     logActivity(`Enrolled new driver: ${newId} - ${d.name}`, `License: ${d.licenseClass} | Truck: ${d.assignedTruckId || 'None'}`);
   };
 
   const updateDriverStatus = (id: string, status: Driver['status']) => {
     setDrivers(prev => prev.map(d => d.id === id ? { ...d, status } : d));
+    api.updateDriver(id, { status }).catch(() => {});
     logActivity(`Updated driver status: ${id} to ${status}`);
+  };
+
+  const updateDriver = (id: string, data: Partial<Driver>) => {
+    setDrivers(prev => prev.map(d => d.id === id ? { ...d, ...data } : d));
+    api.updateDriver(id, data).catch(() => {});
+    logActivity(`Updated driver details: ${id}`, JSON.stringify(data));
   };
 
   const addJob = (j: Omit<Job, 'id' | 'status' | 'fuelAllocated'>) => {
@@ -419,6 +590,7 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       fuelAllocated
     };
     setJobs(prev => [...prev, newJob]);
+    api.saveJob(newJob).catch(() => {});
     logActivity(`Created dispatch job: ${newId}`, `${j.title}`);
   };
 
@@ -503,6 +675,7 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // Put truck in maintenance if high priority or immediate
     setTrucks(prev => prev.map(t => t.id === m.truckId ? { ...t, status: 'Maintenance' as const } : t));
 
+    api.saveMaintenance(newRecord).catch(() => {});
     logActivity(`Logged Maintenance for Truck ${m.truckId}: ${newId}`, m.serviceType);
   };
 
@@ -542,7 +715,7 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
     setFuelLogs(prev => [newLog, ...prev]);
 
-    if (apiOnline) api.saveFuelLog(newLog).catch(() => {});
+    api.saveFuelLog(newLog).catch(() => {});
 
     // Update truck mileage and cost
     setTrucks(prev => prev.map(t => t.id === fl.truckId ? { ...t, mileage: fl.odometer } : t));
@@ -561,7 +734,7 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       submittedById: activeUser?.id,
     };
     setFuelRequisitions(prev => [newReq, ...prev]);
-    if (apiOnline) api.saveFuelRequisition(newReq).catch(() => {});
+    api.saveFuelRequisition(newReq).catch(() => {});
     logActivity(`Created fuel request: ${newId} (${req.litresRequested}L)`, `Truck: ${req.truckId}`);
   };
 
@@ -581,6 +754,12 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     logActivity(`Fuel Requisition ${id}: ${status}`);
   };
 
+  const editRequisitionQuantity = (id: string, litresRequested: number, estimatedCost: number) => {
+    setFuelRequisitions(prev => prev.map(r => r.id === id ? { ...r, litresRequested, estimatedCost } : r));
+    api.updateFuelRequisition(id, { litresRequested, estimatedCost }).catch(() => {});
+    logActivity(`Fuel Requisition ${id}: quantity adjusted to ${litresRequested}L`);
+  };
+
   const reviewRequisition = (id: string) => {
     const today = new Date().toISOString().split('T')[0];
     const reviewerName = activeUser?.name || 'Admin Officer';
@@ -597,14 +776,43 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return r;
     }));
 
-    if (apiOnline) api.updateFuelRequisition(id, { status: 'Reviewed', reviewedBy: reviewerName, reviewedDate: today }).catch(() => {});
-    if (apiOnline) api.saveActivity({ id: `ACT-${Date.now()}`, userId: activeUser?.id || '', userName: reviewerName, action: `Fuel Requisition ${id}: Reviewed by ${reviewerName}`, timestamp: new Date().toISOString() }).catch(() => {});
+    const targetReq = fuelRequisitions.find(r => r.id === id);
+    api.updateFuelRequisition(id, { status: 'Reviewed', reviewedBy: reviewerName, reviewedDate: today, litresRequested: targetReq?.litresRequested, estimatedCost: targetReq?.estimatedCost }).catch(() => {});
+    api.saveActivity({ id: `ACT-${Date.now()}`, userId: activeUser?.id || '', userName: reviewerName, action: `Fuel Requisition ${id}: Reviewed by ${reviewerName}`, timestamp: new Date().toISOString() }).catch(() => {});
 
     logActivity(`Fuel Requisition ${id}: Reviewed by ${reviewerName}`);
     
-    const financialUsers = users.filter(u => u.role === 'Director' || u.role === 'Treasurer' || u.role === 'Administrator');
-    financialUsers.forEach(u => {
-      if (apiOnline) api.sendEmail(u.email, `Fuel Requisition Review Complete - ${id}`, `<h3>Requisition ${id} Ready for Approval</h3><p>Reviewed by: <b>${reviewerName}</b></p><p>Date: ${today}</p><p><a href="${window.location.origin}/#/requisitions">Open Requisitions Pipeline</a></p>`).catch(() => {});
+    const verifiers = users.filter(u => u.role === 'Accounts' || u.role === 'Manager');
+    verifiers.forEach(u => {
+      api.sendEmail(u.email, `Fuel Requisition Review Complete - ${id}`, `<h3>Requisition ${id} Ready for Verification</h3><p>Reviewed by: <b>${reviewerName}</b></p><p>Date: ${today}</p><p><a href="${window.location.origin}/#/requisitions">Open Requisitions Pipeline</a></p>`).catch(() => {});
+    });
+  };
+
+  const verifyRequisition = (id: string) => {
+    const today = new Date().toISOString().split('T')[0];
+    const verifierName = activeUser?.name || 'Accounts Officer';
+    
+    setFuelRequisitions(prev => prev.map(r => {
+      if (r.id === id) {
+        return {
+          ...r,
+          status: 'Verified' as const,
+          verifiedBy: verifierName,
+          verifiedDate: today
+        };
+      }
+      return r;
+    }));
+
+    const targetReq = fuelRequisitions.find(r => r.id === id);
+    api.updateFuelRequisition(id, { status: 'Verified', verifiedBy: verifierName, verifiedDate: today, litresRequested: targetReq?.litresRequested, estimatedCost: targetReq?.estimatedCost }).catch(() => {});
+    api.saveActivity({ id: `ACT-${Date.now()}`, userId: activeUser?.id || '', userName: verifierName, action: `Fuel Requisition ${id}: Verified by ${verifierName}`, timestamp: new Date().toISOString() }).catch(() => {});
+
+    logActivity(`Fuel Requisition ${id}: Verified by ${verifierName}`);
+    
+    const directors = users.filter(u => u.role === 'Director' || u.role === 'Administrator');
+    directors.forEach(u => {
+      api.sendEmail(u.email, `Fuel Requisition Ready for Final Approval - ${id}`, `<h3>Requisition ${id} Verified & Ready for Final Approval</h3><p>Verified by: <b>${verifierName}</b></p><p>Date: ${today}</p><p><a href="${window.location.origin}/#/requisitions">Open Requisitions Pipeline</a></p>`).catch(() => {});
     });
   };
 
@@ -637,15 +845,14 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return r;
     }));
 
-    if (apiOnline) api.updateFuelRequisition(id, { status: 'Approved', approvedBy: approverName, approvedDate: today, redeemToken, qrCodeData }).catch(() => {});
-    if (apiOnline) api.saveActivity({ id: `ACT-${Date.now()}`, userId: activeUser?.id || '', userName: approverName, action: `Fuel Requisition ${id}: Approved by ${approverName}`, timestamp: new Date().toISOString() }).catch(() => {});
+    const req = fuelRequisitions.find(r => r.id === id);
+    api.updateFuelRequisition(id, { status: 'Approved', approvedBy: approverName, approvedDate: today, redeemToken, qrCodeData, litresRequested: req?.litresRequested, estimatedCost: req?.estimatedCost }).catch(() => {});
+    api.saveActivity({ id: `ACT-${Date.now()}`, userId: activeUser?.id || '', userName: approverName, action: `Fuel Requisition ${id}: Approved by ${approverName}`, timestamp: new Date().toISOString() }).catch(() => {});
 
     logActivity(`Fuel Requisition ${id}: Approved by ${approverName}`);
-    
-    const req = fuelRequisitions.find(r => r.id === id);
     const submitter = users.find(u => u.name === req?.driverName);
     if (submitter) {
-      if (apiOnline) api.sendEmail(submitter.email, `Fuel Requisition Approved - ${id}`, `<h3>Your Fuel Requisition Has Been Approved</h3><p>Requisition: <b>${id}</b></p><p>Approved by: <b>${approverName}</b></p><p>Date: ${today}</p><p>Redeem Token: <b style="font-size:18px;letter-spacing:4px">${redeemToken}</b></p><p>Present this token at the fuel station to redeem.</p>`).catch(() => {});
+      api.sendEmail(submitter.email, `Fuel Requisition Approved - ${id}`, `<h3>Your Fuel Requisition Has Been Approved</h3><p>Requisition: <b>${id}</b></p><p>Approved by: <b>${approverName}</b></p><p>Date: ${today}</p><p>Redeem Token: <b style="font-size:18px;letter-spacing:4px">${redeemToken}</b></p><p>Present this token at the fuel station to redeem.</p>`).catch(() => {});
     }
   };
 
@@ -666,15 +873,16 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return r;
     }));
 
-    if (apiOnline) api.updateFuelRequisition(id, { status: 'Rejected', rejectedBy: rejecterName, rejectedDate: today, rejectionReason: reason }).catch(() => {});
-    if (apiOnline) api.saveActivity({ id: `ACT-${Date.now()}`, userId: activeUser?.id || '', userName: rejecterName, action: `Fuel Requisition ${id}: Rejected by ${rejecterName} - Reason: ${reason}`, timestamp: new Date().toISOString() }).catch(() => {});
+    const rejectReq = fuelRequisitions.find(r => r.id === id);
+    api.updateFuelRequisition(id, { status: 'Rejected', rejectedBy: rejecterName, rejectedDate: today, rejectionReason: reason, litresRequested: rejectReq?.litresRequested, estimatedCost: rejectReq?.estimatedCost }).catch(() => {});
+    api.saveActivity({ id: `ACT-${Date.now()}`, userId: activeUser?.id || '', userName: rejecterName, action: `Fuel Requisition ${id}: Rejected by ${rejecterName} - Reason: ${reason}`, timestamp: new Date().toISOString() }).catch(() => {});
 
     logActivity(`Fuel Requisition ${id}: Rejected by ${rejecterName} - Reason: ${reason}`);
     
     const req = fuelRequisitions.find(r => r.id === id);
     const submitter = users.find(u => u.name === req?.driverName);
     if (submitter) {
-      if (apiOnline) api.sendEmail(submitter.email, `Fuel Requisition Rejected - ${id}`, `<h3>Your Fuel Requisition Has Been Rejected</h3><p>Requisition: <b>${id}</b></p><p>Rejected by: <b>${rejecterName}</b></p><p>Date: ${today}</p><p>Reason: <i>${reason}</i></p><p>Please contact the approver for more details.</p>`).catch(() => {});
+      api.sendEmail(submitter.email, `Fuel Requisition Rejected - ${id}`, `<h3>Your Fuel Requisition Has Been Rejected</h3><p>Requisition: <b>${id}</b></p><p>Rejected by: <b>${rejecterName}</b></p><p>Date: ${today}</p><p>Reason: <i>${reason}</i></p><p>Please contact the approver for more details.</p>`).catch(() => {});
     }
   };
 
@@ -682,7 +890,8 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     redeemedByGasStation: string; 
     redeemedAttendantSignature: string; 
     redeemedActualLitres: number; 
-    redeemedActualCost: number; 
+    redeemedActualCost: number;
+    odometer: number;
   }) => {
     const target = fuelRequisitions.find(r => r.id === id);
     if (!target) return;
@@ -703,7 +912,6 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }));
 
     // Add a real entry to fuel logs upon redemption
-    const matchTruck = trucks.find(t => t.id === target.truckId);
     const newLog: FuelLog = {
       id: `FL-${Math.floor(900 + Math.random() * 100)}`,
       truckId: target.truckId,
@@ -712,22 +920,36 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       driverName: target.driverName || 'N/A',
       litres: rd.redeemedActualLitres,
       cost: rd.redeemedActualCost,
-      odometer: matchTruck ? matchTruck.mileage + 45 : 12050,
+      odometer: rd.odometer,
       location: rd.redeemedByGasStation,
       date: new Date().toISOString().split('T')[0],
       fuelType: target.fuelType || 'Diesel'
     };
     setFuelLogs(prev => [newLog, ...prev]);
 
-    if (apiOnline) {
-      api.updateFuelRequisition(id, { status: 'Redeemed', redeemDate: new Date().toISOString().split('T')[0], redeemedByGasStation: rd.redeemedByGasStation, redeemedAttendantSignature: rd.redeemedAttendantSignature, redeemedActualLitres: rd.redeemedActualLitres, redeemedActualCost: rd.redeemedActualCost }).catch(() => {});
-      api.saveFuelLog(newLog).catch(() => {});
-    }
+    api.updateFuelRequisition(id, { status: 'Redeemed', redeemDate: new Date().toISOString().split('T')[0], redeemedByGasStation: rd.redeemedByGasStation, redeemedAttendantSignature: rd.redeemedAttendantSignature, redeemedActualLitres: rd.redeemedActualLitres, redeemedActualCost: rd.redeemedActualCost, litresRequested: target.litresRequested, estimatedCost: target.estimatedCost }).catch(() => {});
+    api.saveFuelLog(newLog).catch(() => {});
 
-    setPrepaidFuelBalanceState(prev => ({
-      diesel: Math.max(0, prev.diesel - (target.fuelType === 'Diesel' ? rd.redeemedActualLitres : 0)),
-      petrol: Math.max(0, prev.petrol - (target.fuelType === 'Petrol' ? rd.redeemedActualLitres : 0))
-    }));
+    setPrepaidFuelBalanceState(prev => {
+      const newDiesel = Math.max(0, prev.diesel - (target.fuelType === 'Diesel' ? rd.redeemedActualLitres : 0));
+      const newPetrol = Math.max(0, prev.petrol - (target.fuelType === 'Petrol' ? rd.redeemedActualLitres : 0));
+      const fuelType = target.fuelType || 'Diesel';
+      const deductionLog: FuelBalanceLog = {
+        id: `FBL-${Date.now()}`,
+        type: 'Deduction',
+        fuelType: fuelType as 'Diesel' | 'Petrol',
+        litres: rd.redeemedActualLitres,
+        balanceBefore: fuelType === 'Diesel' ? prev.diesel : prev.petrol,
+        balanceAfter: fuelType === 'Diesel' ? newDiesel : newPetrol,
+        note: `Redeemed for ${target.truckPlate || target.truckId} at ${rd.redeemedByGasStation}`,
+        createdBy: activeUser?.name,
+      };
+      setFuelBalanceLogs(prevLogs => [deductionLog, ...prevLogs]);
+      api.saveFuelBalanceLog(deductionLog).catch(() => {});
+      api.saveSetting('prepaidDiesel', String(newDiesel)).catch(() => {});
+      api.saveSetting('prepaidPetrol', String(newPetrol)).catch(() => {});
+      return { diesel: newDiesel, petrol: newPetrol };
+    });
 
     logActivity(`Verified & Redeemed Fuel Token for ${target.id} at ${rd.redeemedByGasStation}`, `Filled ${rd.redeemedActualLitres}L`);
   };
@@ -739,6 +961,7 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       id: newId
     };
     setBranches(prev => [...prev, newBranch]);
+    api.saveBranch(newBranch).catch(() => {});
     logActivity(`Added physical operations branch: ${b.name}`, `${b.locationName}`);
   };
 
@@ -801,6 +1024,7 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setTrucks(prev => prev.filter(t => t.id !== id));
     setDrivers(prev => prev.map(d => d.assignedTruckId === id ? { ...d, assignedTruckId: null, status: 'Off Duty' as const } : d));
     setJobs(prev => prev.map(j => j.truckId === id ? { ...j, truckId: null, truckPlate: undefined, status: j.status === 'Assigned' || j.status === 'In Transit' ? 'Pending' as const : j.status } : j));
+    api.deleteTruck(id).catch(() => {});
     logActivity(`Deleted fleet asset truck: ${id}`);
   };
 
@@ -808,6 +1032,7 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setDrivers(prev => prev.filter(d => d.id !== id));
     setTrucks(prev => prev.map(t => t.driverId === id ? { ...t, driverId: null, status: 'Idle' as const } : t));
     setJobs(prev => prev.map(j => j.driverId === id ? { ...j, driverId: null, driverName: undefined, status: j.status === 'Assigned' || j.status === 'In Transit' ? 'Pending' as const : j.status } : j));
+    api.deleteDriver(id).catch(() => {});
     logActivity(`Deleted driver personnel: ${id}`);
   };
 
@@ -817,10 +1042,9 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const resetAllData = () => {
-    // Keep user roles intact so the console can still function with switcher and login, but clear operational data completely
-    setUsers(INITIAL_USERS);
-    const fallbackUser = activeUser && INITIAL_USERS.some(u => u.id === activeUser.id) ? activeUser : INITIAL_USERS[0];
-    setActiveUserState(fallbackUser);
+    const currentUser = activeUser || { id: '', name: 'System', role: 'Administrator' };
+    setUsers([]);
+    setActiveUserState(currentUser);
     
     setTrucks([]);
     setDrivers([]);
@@ -832,19 +1056,19 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       {
         id: "ACT-001",
         timestamp: new Date().toISOString(),
-        user: fallbackUser.name,
-        role: fallbackUser.role,
+        user: currentUser.name,
+        role: currentUser.role,
         action: "Database Clear",
-        details: "Clean slate initialized. All simulated operational tables purged."
-      }
-    ]);
+      details: "Database clear."
+    }
+  ]);
     setBranches([]);
     setThemeState('slate');
     setLogoTextState('FLEETCOMMAND');
     setLogoEmojiState('🚛');
 
-    localStorage.setItem('fc_users', JSON.stringify(INITIAL_USERS));
-    localStorage.setItem('fc_activeUser', JSON.stringify(fallbackUser));
+    localStorage.setItem('fc_users', JSON.stringify([]));
+    localStorage.setItem('fc_activeUser', JSON.stringify(currentUser));
     localStorage.setItem('fc_trucks', JSON.stringify([]));
     localStorage.setItem('fc_drivers', JSON.stringify([]));
     localStorage.setItem('fc_jobs', JSON.stringify([]));
@@ -855,10 +1079,10 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       {
         id: "ACT-001",
         timestamp: new Date().toISOString(),
-        user: fallbackUser.name,
-        role: fallbackUser.role,
+        user: currentUser.name,
+        role: currentUser.role,
         action: "Database Clear",
-        details: "Clean slate initialized. All simulated operational tables purged."
+        details: "Database clear."
       }
     ]));
     setDispatches([]);
@@ -878,18 +1102,19 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       users, activeUser, trucks, drivers, jobs, maintenance, fuelLogs, fuelRequisitions, activities,
       branches, theme, logoText, logoEmoji, prepaidFuelBalance, setPrepaidFuelBalance,
       setActiveUser, approveUser, logout, addUser, updateUserRole, revokeUser, deleteUser,
-      addTruck, updateTruckStatus, assignDriverToTruck,
-      addDriver, updateDriverStatus,
+      addTruck, updateTruck, updateTruckStatus, assignDriverToTruck,
+      addDriver, updateDriver, updateDriverStatus,
       addJob, assignJob, updateJobStatus,
       addMaintenanceRecord, updateMaintenanceStatus,
-      addFuelLog, addFuelRequisition, updateRequisitionStatus,
-      reviewRequisition, approveRequisition, rejectRequisition,
+      addFuelLog, addFuelRequisition, updateRequisitionStatus, editRequisitionQuantity,
+      reviewRequisition, verifyRequisition, approveRequisition, rejectRequisition,
       redeemRequisition, addBranch,
       setTheme, setLogoText, setLogoEmoji,
       logActivity, resetAllData,
       clearTrucksData, clearDriversData, clearJobsData, clearMaintenanceData, clearFuelData, clearDispatchData,
       deleteTruck, deleteDriver, deleteJob,
-      dispatches, setDispatches, stockMovements, setStockMovements
+      dispatches, setDispatches, stockMovements, setStockMovements,
+      fuelBalanceLogs, setFuelBalanceLogs
     }}>
       {children}
     </FleetContext.Provider>
