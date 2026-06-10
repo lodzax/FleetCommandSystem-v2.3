@@ -557,7 +557,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, title }) => {
             )}
 
             <NavLink 
-              to="/scan" 
+              to="/redemption" 
               className={({ isActive }) => navLinkClass(isActive)}
             >
               <ScanLine size={18} />
