@@ -1,22 +1,23 @@
 export type TruckStatus = 'Active' | 'Maintenance' | 'Out of Service' | 'Idle';
+export type VehicleCategory = 'Truck' | 'Light Vehicle';
 
 export interface Truck {
-  id: string; // e.g., "TRK-001"
+  id: string;
   plateNumber: string;
-  type: string; // e.g., "CAT 777G Dump Truck", "Scania R500 Heavy Tipper", "Volvo FMX 440"
+  type: string;
   model: string;
-  capacity: string; // e.g., "40 Tons", "100 Tons"
+  capacity: string;
   status: TruckStatus;
-  fuelRate: number; // Litres per 100km
+  fuelRate: number;
   currentLat: number;
   currentLng: number;
   driverId: string | null;
   assignedDriverName?: string;
-  mileage: number; // km
+  mileage: number;
   nextServiceMileage: number;
   lastServiceDate: string;
   imageUrl?: string;
-  // Ehangtech GPS tracker fields
+  category?: VehicleCategory;
   trackerImei?: string;
   trackerModel?: string;
   trackerSimCard?: string;
@@ -115,9 +116,11 @@ export interface FuelRequisition {
   branchId: string;
   branchName?: string;
   dateRequested: string;
-  status: 'Pending' | 'Reviewed' | 'Approved' | 'Rejected' | 'Redeemed';
+  status: 'Pending' | 'Reviewed' | 'Verified' | 'Approved' | 'Rejected' | 'Redeemed';
   reviewedBy?: string;
   reviewedDate?: string;
+  verifiedBy?: string;
+  verifiedDate?: string;
   approvedBy?: string;
   approvedDate?: string;
   rejectedBy?: string;
@@ -133,6 +136,8 @@ export interface FuelRequisition {
   redeemedActualCost?: number;
   submittedBy?: string;
   submittedById?: string;
+  destination?: string;
+  odometerReading?: number;
 }
 
 export interface Branch {
@@ -188,5 +193,17 @@ export interface StockMovement {
   itemDescription: string;
   itemsCount: number;
   status: 'Pending' | 'In Transit' | 'Completed';
+}
+
+export interface FuelBalanceLog {
+  id: string;
+  type: 'Top-Up' | 'Deduction' | 'Usage';
+  fuelType: 'Diesel' | 'Petrol';
+  litres: number;
+  balanceBefore: number;
+  balanceAfter: number;
+  note?: string;
+  createdBy?: string;
+  createdAt?: string;
 }
 

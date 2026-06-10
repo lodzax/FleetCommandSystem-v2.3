@@ -9,11 +9,14 @@ import { FuelRequisition } from '../types';
 import logoImg from '../../assets/logo.png';
 
 export const RequisitionsPipeline: React.FC = () => {
-  const { fuelRequisitions, trucks, drivers, branches, activeUser, addFuelRequisition, updateRequisitionStatus, reviewRequisition, approveRequisition, rejectRequisition, prepaidFuelBalance } = useFleet();
+  const { fuelRequisitions, trucks, drivers, branches, activeUser, addFuelRequisition, updateRequisitionStatus, editRequisitionQuantity, reviewRequisition, verifyRequisition, approveRequisition, rejectRequisition, prepaidFuelBalance } = useFleet();
 
   const [showReqModal, setShowReqModal] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
+  const [showEditQtyModal, setShowEditQtyModal] = useState(false);
+  const [editTarget, setEditTarget] = useState<FuelRequisition | null>(null);
+  const [editLitres, setEditLitres] = useState(0);
   const [viewRequisition, setViewRequisition] = useState<FuelRequisition | null>(null);
   const [rejectTargetId, setRejectTargetId] = useState('');
   const [rejectReason, setRejectReason] = useState('');
@@ -39,9 +42,25 @@ export const RequisitionsPipeline: React.FC = () => {
   const [reqFuelDate, setReqFuelDate] = useState(new Date().toISOString().split('T')[0]);
   const [reqFuelType, setReqFuelType] = useState<'Diesel' | 'Petrol'>('Diesel');
   const [reqBranchId, setReqBranchId] = useState('');
+  const QUICK_BRANCHES = ['Belmont', 'Mthwakazi', 'Mswela', 'VID', 'Thobelani'];
   const [showQuickReq, setShowQuickReq] = useState(false);
   const [qrLitres, setQrLitres] = useState(200);
-  const [qrBranchId, setQrBranchId] = useState('');
+  const [qrPlate, setQrPlate] = useState('');
+  const [qrFuelType, setQrFuelType] = useState<'Diesel' | 'Petrol'>('Diesel');
+  const [qrBranch, setQrBranch] = useState('');
+  const [qrDestination, setQrDestination] = useState('');
+  const [qrOdometer, setQrOdometer] = useState(0);
+  const [qrPurpose, setQrPurpose] = useState('');
+  const [insufficientMsg, setInsufficientMsg] = useState('');
+
+  const checkFuelBalance = (litres: number, type: 'Diesel' | 'Petrol'): boolean => {
+    const balance = type === 'Diesel' ? prepaidFuelBalance.diesel : prepaidFuelBalance.petrol;
+    if (balance < litres) {
+      setInsufficientMsg(`The prepaid balance of ${type} is insufficient (${balance.toLocaleString()}L available, ${litres}L requested). Contact the Accounts department for a top-up.`);
+      return false;
+    }
+    return true;
+  };
 
   const isDriverRole = activeUser?.role === 'Driver';
   const activeDriverRecord = isDriverRole
@@ -51,30 +70,39 @@ export const RequisitionsPipeline: React.FC = () => {
     : null;
 
   const myRequisitions = fuelRequisitions.filter(r => r.submittedById === activeUser?.id || r.driverName === activeUser?.name);
-  const pendingReq = myRequisitions.filter(r => r.status === 'Pending' || r.status === 'Reviewed').length;
+  const pendingReq = myRequisitions.filter(r => r.status === 'Pending' || r.status === 'Reviewed' || r.status === 'Verified').length;
   const approvedReq = myRequisitions.filter(r => r.status === 'Approved').length;
   const myTruck = activeDriverRecord ? trucks.find(t => t.id === activeDriverRecord.assignedTruckId) : null;
 
   const handleQuickReq = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!qrBranchId) return;
-    const branch = branches.find(b => b.id === qrBranchId);
+    if (!qrBranch || !qrPlate) return;
+    if (!checkFuelBalance(qrLitres, qrFuelType)) return;
+    const selectedTruck = trucks.find(t => t.plateNumber === qrPlate);
+    const rate = qrFuelType === 'Petrol' ? 2.16 : 2.18;
     addFuelRequisition({
-      truckId: myTruck?.id || '',
-      truckPlate: myTruck?.plateNumber,
+      truckId: selectedTruck?.id || '',
+      truckPlate: qrPlate,
       driverId: activeDriverRecord?.id || activeUser!.id,
       driverName: activeDriverRecord?.name || activeUser?.name,
       litresRequested: qrLitres,
-      estimatedCost: Math.round(qrLitres * 2.18),
-      purpose: 'Fuel request from dashboard',
+      estimatedCost: Math.round(qrLitres * rate),
+      purpose: qrPurpose || 'Fuel request from dashboard',
       fuelDate: new Date().toISOString().split('T')[0],
-      fuelType: 'Diesel',
-      branchId: qrBranchId,
-      branchName: branch?.name
+      fuelType: qrFuelType,
+      branchId: qrBranch,
+      branchName: qrBranch,
+      destination: qrDestination,
+      odometerReading: qrOdometer
     });
     setShowQuickReq(false);
     setQrLitres(200);
-    setQrBranchId('');
+    setQrFuelType('Diesel');
+    setQrBranch('');
+    setQrDestination('');
+    setQrOdometer(0);
+    setQrPurpose('');
+    setQrPlate('');
   };
 
   useEffect(() => {
@@ -108,6 +136,7 @@ export const RequisitionsPipeline: React.FC = () => {
   const handleCreateRequisition = (e: React.FormEvent) => {
     e.preventDefault();
     if (!reqTruckId || !reqDriverId || !reqBranchId) return;
+    if (!checkFuelBalance(reqLitres, reqFuelType)) return;
 
     const truck = trucks.find(t => t.id === reqTruckId);
     const driver = drivers.find(d => d.id === reqDriverId);
@@ -136,8 +165,9 @@ export const RequisitionsPipeline: React.FC = () => {
   const isAccounts = activeUser?.role === 'Accounts';
   const isTreasurer = activeUser?.role === 'Treasurer';
   const isDriver = activeUser?.role === 'Driver';
-  const canReview = isManager || isAccounts;
-  const canApprove = isAdmin || isDirector || isTreasurer;
+  const canReview = isTreasurer;
+  const canVerify = isAccounts || isManager;
+  const canApprove = isDirector || isAdmin;
 
   const filteredRequisitions = isDriver 
     ? fuelRequisitions.filter(r => r.submittedById === activeUser?.id || r.driverName === activeUser?.name)
@@ -319,7 +349,7 @@ export const RequisitionsPipeline: React.FC = () => {
                 <div className="bg-zinc-950/30 border border-zinc-850 rounded p-3 text-[10px] text-zinc-400 font-mono space-y-1">
                   <p><span className="text-zinc-500">Truck:</span> {myTruck ? `${myTruck.plateNumber} (${myTruck.type})` : 'No assigned truck'}</p>
                   <p><span className="text-zinc-500">Driver:</span> {activeDriverRecord?.name || activeUser?.name}</p>
-                  <p><span className="text-zinc-500">Fuel:</span> Diesel @ $2.18/L</p>
+                  <p><span className="text-zinc-500">Fuel:</span> {qrFuelType} @ ${qrFuelType === 'Petrol' ? '2.16' : '2.18'}/L</p>
                   <div className="border-t border-zinc-800 pt-1.5 mt-1.5 space-y-0.5">
                     <p><span className="text-zinc-500">Prepaid Diesel:</span> <span className="text-blue-400 font-bold">{prepaidFuelBalance.diesel.toLocaleString()} L</span></p>
                     <p><span className="text-zinc-500">Prepaid Petrol:</span> <span className="text-emerald-400 font-bold">{prepaidFuelBalance.petrol.toLocaleString()} L</span></p>
@@ -334,19 +364,58 @@ export const RequisitionsPipeline: React.FC = () => {
                   </div>
                   <div>
                     <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider font-mono mb-1">Est. Cost</label>
-                    <input type="number" readOnly value={Math.round(qrLitres * 2.18)}
+                    <input type="number" readOnly value={Math.round(qrLitres * (qrFuelType === 'Petrol' ? 2.16 : 2.18))}
                       className="w-full bg-[#181e35] border border-zinc-850 p-2.5 rounded text-zinc-500 font-mono" />
                   </div>
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider font-mono mb-1">Branch</label>
-                  <select required value={qrBranchId} onChange={(e) => setQrBranchId(e.target.value)}
+                  <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider font-mono mb-1">Fuel Type</label>
+                  <select required value={qrFuelType} onChange={(e) => setQrFuelType(e.target.value as 'Diesel' | 'Petrol')}
                     className="w-full bg-[#0c0f1d] border border-zinc-850 p-2.5 rounded text-zinc-200 cursor-pointer">
-                    <option value="">-- Select Branch --</option>
-                    {branches.map(b => (
-                      <option key={b.id} value={b.id}>{b.name}</option>
+                    <option value="Diesel">Diesel ($2.18/L)</option>
+                    <option value="Petrol">Petrol ($2.16/L)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider font-mono mb-1">License Plate</label>
+                  <select required value={qrPlate} onChange={(e) => setQrPlate(e.target.value)}
+                    className="w-full bg-[#0c0f1d] border border-zinc-850 p-2.5 rounded text-zinc-200 cursor-pointer">
+                    <option value="">-- Select Plate --</option>
+                    {trucks.map(t => (
+                      <option key={t.id} value={t.plateNumber}>{t.plateNumber} ({t.model || t.type})</option>
                     ))}
                   </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider font-mono mb-1">Branch</label>
+                  <select required value={qrBranch} onChange={(e) => setQrBranch(e.target.value)}
+                    className="w-full bg-[#0c0f1d] border border-zinc-850 p-2.5 rounded text-zinc-200 cursor-pointer">
+                    <option value="">-- Select Branch --</option>
+                    {QUICK_BRANCHES.map(b => (
+                      <option key={b} value={b}>{b}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider font-mono mb-1">Destination</label>
+                  <input type="text" required value={qrDestination}
+                    onChange={(e) => setQrDestination(e.target.value)}
+                    placeholder="Enter destination"
+                    className="w-full bg-[#0c0f1d] border border-zinc-850 p-2.5 rounded text-zinc-200 font-mono" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider font-mono mb-1">Odometer (km)</label>
+                  <input type="number" min="0" required value={qrOdometer}
+                    onChange={(e) => setQrOdometer(parseInt(e.target.value) || 0)}
+                    className="w-full bg-[#0c0f1d] border border-zinc-850 p-2.5 rounded text-zinc-200 font-mono" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider font-mono mb-1">Purpose / Note</label>
+                  <textarea value={qrPurpose}
+                    onChange={(e) => setQrPurpose(e.target.value)}
+                    placeholder="e.g. Trip to Bulawayo"
+                    rows={2}
+                    className="w-full bg-[#0c0f1d] border border-zinc-850 p-2.5 rounded text-zinc-200 font-mono text-[11px] resize-none" />
                 </div>
                 <div className="pt-4 border-t border-zinc-800 flex justify-end gap-3 font-mono">
                   <button type="button" onClick={() => setShowQuickReq(false)}
@@ -359,6 +428,69 @@ export const RequisitionsPipeline: React.FC = () => {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* EDIT QUANTITY MODAL (Accounts) */}
+        {showEditQtyModal && editTarget && (
+          <div className="fixed inset-0 z-50 overflow-y-auto bg-black/80 flex items-center justify-center p-4 backdrop-blur-xs">
+            <div className="bg-[#121625] border border-zinc-800 w-full max-w-sm rounded-xl shadow-2xl p-6 text-xs">
+              <div className="flex justify-between items-center pb-4 border-b border-zinc-800 mb-4">
+                <div>
+                  <h3 className="text-sm font-bold text-orange-400 font-mono uppercase">Adjust Fuel Quantity</h3>
+                  <p className="text-zinc-500 mt-1 font-mono text-[10px]">{editTarget.id} · {editTarget.truckPlate || editTarget.truckId}</p>
+                </div>
+                <button onClick={() => setShowEditQtyModal(false)} className="h-7 w-7 rounded-full bg-zinc-900 flex items-center justify-center text-zinc-400 cursor-pointer">
+                  <X size={14} />
+                </button>
+              </div>
+              <form onSubmit={(e) => { e.preventDefault(); editRequisitionQuantity(editTarget.id, editLitres, Math.round(editLitres * (editTarget.fuelType === 'Petrol' ? 2.16 : 2.18))); setShowEditQtyModal(false); }} className="space-y-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider font-mono mb-1">Litres Requested</label>
+                  <input type="number" min="1" required value={editLitres}
+                    onChange={(e) => setEditLitres(parseInt(e.target.value) || 0)}
+                    className="w-full bg-[#0c0f1d] border border-zinc-850 p-2.5 rounded text-zinc-200 font-mono" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider font-mono mb-1">New Estimated Cost</label>
+                  <input type="number" readOnly value={Math.round(editLitres * (editTarget.fuelType === 'Petrol' ? 2.16 : 2.18))}
+                    className="w-full bg-[#181e35] border border-zinc-850 p-2.5 rounded text-zinc-500 font-mono" />
+                </div>
+                <div className="pt-4 border-t border-zinc-800 flex justify-end gap-3 font-mono">
+                  <button type="button" onClick={() => setShowEditQtyModal(false)}
+                    className="px-4 py-2 hover:bg-zinc-850 border border-zinc-800 hover:text-white rounded text-xs cursor-pointer">
+                    Cancel
+                  </button>
+                  <button type="submit"
+                    className="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-black font-semibold rounded text-xs shadow-lg cursor-pointer">
+                    Update Quantity
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* INSUFFICIENT BALANCE MODAL */}
+        {insufficientMsg && (
+          <div className="fixed inset-0 z-50 overflow-y-auto bg-black/80 flex items-center justify-center p-4 backdrop-blur-xs">
+            <div className="bg-[#121625] border border-red-800 w-full max-w-md rounded-xl shadow-2xl p-6 text-xs">
+              <div className="flex justify-between items-center pb-4 border-b border-red-800 mb-4">
+                <h3 className="text-sm font-bold text-red-400 font-mono uppercase">Insufficient Balance</h3>
+                <button onClick={() => setInsufficientMsg('')} className="h-7 w-7 rounded-full bg-zinc-900 flex items-center justify-center text-zinc-400 cursor-pointer">
+                  <X size={14} />
+                </button>
+              </div>
+              <div className="bg-zinc-950/30 border border-red-900/30 rounded p-4 text-zinc-300 font-mono text-xs leading-relaxed">
+                {insufficientMsg}
+              </div>
+              <div className="pt-4 border-t border-zinc-800 flex justify-end gap-3 font-mono">
+                <button onClick={() => setInsufficientMsg('')}
+                  className="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-black font-semibold rounded text-xs shadow-lg cursor-pointer">
+                  OK
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -402,6 +534,7 @@ export const RequisitionsPipeline: React.FC = () => {
                       <div>
                         <span className={`px-2 py-0.5 rounded text-[9.5px] uppercase font-bold font-mono ${
                           r.status === 'Approved' ? 'bg-emerald-500/10 text-emerald-400' :
+                          r.status === 'Verified' ? 'bg-purple-500/10 text-purple-400' :
                           r.status === 'Reviewed' ? 'bg-blue-500/10 text-blue-400' :
                           r.status === 'Redeemed' ? 'bg-zinc-800 text-zinc-400 font-light' :
                           r.status === 'Rejected' ? 'bg-red-500/10 text-red-400' : 'bg-yellow-500/10 text-yellow-500 animate-pulse'
@@ -410,12 +543,15 @@ export const RequisitionsPipeline: React.FC = () => {
                       {r.status === 'Reviewed' && r.reviewedBy && (
                         <div className="mt-1 text-[9px] text-blue-400 font-mono">by: {r.reviewedBy}</div>
                       )}
-                      {r.status === 'Approved' && r.redeemToken && (
+                      {r.status === 'Verified' && r.verifiedBy && (
+                        <div className="mt-1 text-[9px] text-purple-400 font-mono">verified by: {r.verifiedBy}</div>
+                      )}
+                      {r.status === 'Approved' && r.redeemToken && (r.submittedById === activeUser?.id || r.driverId === activeUser?.id) && (
                         <div className="mt-1 text-[10px] text-yellow-400 font-bold font-mono">
                           Token: <span className="underline select-all tracking-widest">{r.redeemToken}</span>
                         </div>
                       )}
-                      {r.status === 'Approved' && r.qrCodeData && (
+                      {r.status === 'Approved' && r.qrCodeData && (r.submittedById === activeUser?.id || r.driverId === activeUser?.id) && (
                         <div className="mt-1.5">
                           <img 
                             src={r.qrCodeData} 
@@ -468,15 +604,15 @@ export const RequisitionsPipeline: React.FC = () => {
                           </button>
                         </div>
                       ) : r.status === 'Pending' ? (
-                        <span className="text-zinc-600 font-mono text-[10px] italic">Awaiting Review</span>
-                      ) : r.status === 'Reviewed' && canApprove ? (
+                        <span className="text-zinc-600 font-mono text-[10px] italic">Awaiting <span className="text-orange-400 not-italic">Treasurer</span></span>
+                      ) : r.status === 'Reviewed' && canVerify ? (
                         <div className="flex justify-center gap-1.5 font-mono">
                           <button
-                            onClick={() => approveRequisition(r.id)}
-                            className="px-2 py-0.5 bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold rounded text-[9.5px] cursor-pointer flex items-center gap-1"
-                            title="Approve this requisition"
+                            onClick={() => verifyRequisition(r.id)}
+                            className="px-2 py-0.5 bg-sky-500 hover:bg-sky-400 text-black font-extrabold rounded text-[9.5px] cursor-pointer flex items-center gap-1"
+                            title="Verify this requisition"
                           >
-                            <ThumbsUp size={10} /> Approve
+                            <Eye size={10} /> Verify
                           </button>
                           <button
                             onClick={() => openRejectModal(r.id)}
@@ -487,8 +623,27 @@ export const RequisitionsPipeline: React.FC = () => {
                           </button>
                         </div>
                       ) : r.status === 'Reviewed' ? (
-                        <span className="text-zinc-500 font-mono text-[10px] italic">Awaiting Approval</span>
-                      ) : r.status === 'Approved' ? (
+                        <span className="text-zinc-500 font-mono text-[10px] italic">Awaiting <span className="text-sky-400 not-italic">Accounts/Manager</span></span>
+                      ) : r.status === 'Verified' && canApprove ? (
+                        <div className="flex justify-center gap-1.5 font-mono">
+                          <button
+                            onClick={() => approveRequisition(r.id)}
+                            className="px-2 py-0.5 bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold rounded text-[9.5px] cursor-pointer flex items-center gap-1"
+                            title="Final approve this requisition"
+                          >
+                            <ThumbsUp size={10} /> Final Approve
+                          </button>
+                          <button
+                            onClick={() => openRejectModal(r.id)}
+                            className="px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white font-bold rounded text-[9.5px] cursor-pointer flex items-center gap-1"
+                            title="Reject this requisition"
+                          >
+                            <ThumbsDown size={10} /> Reject
+                          </button>
+                        </div>
+                      ) : r.status === 'Verified' ? (
+                        <span className="text-zinc-500 font-mono text-[10px] italic">Awaiting <span className="text-emerald-400 not-italic">Director</span></span>
+                      ) : r.status === 'Approved' && (r.submittedById === activeUser?.id || r.driverId === activeUser?.id) ? (
                         <div className="flex justify-center gap-1.5 font-mono">
                           <button
                             onClick={() => downloadPdf(r)}
@@ -498,9 +653,22 @@ export const RequisitionsPipeline: React.FC = () => {
                             <Download size={10} /> PDF
                           </button>
                         </div>
+                      ) : r.status === 'Approved' ? (
+                        <span className="text-zinc-600 font-mono text-[10px]"><span className="text-emerald-400 font-bold">Approved</span> by {r.approvedBy || 'Director'}</span>
+                      ) : r.status === 'Redeemed' ? (
+                        <span className="text-zinc-500 font-mono text-[10px]"><span className="text-zinc-400">Redeemed</span> by: {r.driverName || r.driverId}</span>
                       ) : (
                         <span className="text-zinc-600 font-mono text-[10px] italic">{r.status}</span>
                       )}
+                      {(r.status === 'Pending' || r.status === 'Reviewed') && isAccounts ? (
+                        <button
+                          onClick={() => { setEditTarget(r); setEditLitres(r.litresRequested); setShowEditQtyModal(true); }}
+                          className="mt-1.5 px-2 py-0.5 bg-orange-600 hover:bg-orange-500 text-black font-extrabold rounded text-[9.5px] cursor-pointer flex items-center gap-1 mx-auto"
+                          title="Edit fuel quantity"
+                        >
+                          <span className="text-[10px]">✏️</span> Edit Qty
+                        </button>
+                      ) : null}
                     </td>
                   </tr>
                 ))}
@@ -821,7 +989,7 @@ export const RequisitionsPipeline: React.FC = () => {
                 </div>
               )}
 
-              {viewRequisition.status === 'Approved' && viewRequisition.redeemToken && (
+              {viewRequisition.status === 'Approved' && viewRequisition.redeemToken && (viewRequisition.submittedById === activeUser?.id || viewRequisition.driverId === activeUser?.id) && (
                 <div className="bg-yellow-500/5 border border-yellow-500/20 p-3 rounded text-center">
                   <span className="text-[9px] text-zinc-500 uppercase font-mono block">Redeem Token</span>
                   <p className="text-yellow-400 font-bold font-mono text-sm tracking-widest mt-1">{viewRequisition.redeemToken}</p>

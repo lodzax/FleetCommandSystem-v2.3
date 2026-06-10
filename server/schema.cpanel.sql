@@ -142,9 +142,11 @@ CREATE TABLE IF NOT EXISTS fuel_requisitions (
   branchId VARCHAR(50),
   branchName VARCHAR(100),
   dateRequested VARCHAR(20),
-  status ENUM('Pending','Reviewed','Approved','Rejected','Redeemed') NOT NULL DEFAULT 'Pending',
+  status ENUM('Pending','Reviewed','Verified','Approved','Rejected','Redeemed') NOT NULL DEFAULT 'Pending',
   reviewedBy VARCHAR(100),
   reviewedDate VARCHAR(20),
+  verifiedBy VARCHAR(100),
+  verifiedDate VARCHAR(20),
   approvedBy VARCHAR(100),
   approvedDate VARCHAR(20),
   rejectedBy VARCHAR(100),
@@ -160,6 +162,7 @@ CREATE TABLE IF NOT EXISTS fuel_requisitions (
   redeemedActualCost DECIMAL(10,2),
   submittedBy VARCHAR(100),
   submittedById VARCHAR(50),
+  odometerReading INT DEFAULT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_truck (truckId),
@@ -224,14 +227,5 @@ CREATE TABLE IF NOT EXISTS app_settings (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
--- Seed data: default branches
-INSERT IGNORE INTO branches (id, name, locationName, lat, lng, phone, manager) VALUES
-('BR-101', 'Hwange Central Depot', 'Hwange Mining Zone', -18.3647, 26.5000, '+263 81 22345', 'Alfred Moyo'),
-('BR-102', 'Bulawayo Transit Depot', 'Bulawayo Industrial', -20.1500, 28.5833, '+263 9 77890', 'Sipho Ndlovu'),
-('BR-103', 'Harare HQ Dispatch', 'Harare Central', -17.8292, 31.0522, '+263 4 489320', 'Grace Kabasa');
-
--- Seed data: default settings
-INSERT IGNORE INTO app_settings (settingKey, settingValue) VALUES
-('theme', 'slate'),
-('logoText', 'FLEETCOMMAND'),
-('logoEmoji', '🚛');
+-- Default settings (set via API on first launch)
+-- App settings are created by the application on first run
