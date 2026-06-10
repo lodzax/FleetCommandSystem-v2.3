@@ -438,16 +438,16 @@ export const Layout: React.FC<LayoutProps> = ({ children, title }) => {
       )}
 
       {/* SIDEBAR */}
-      <aside className={`fixed lg:static inset-y-0 left-0 z-50 w-64 bg-[#0d1222]/95 border-r border-zinc-800/80 flex flex-col justify-between shrink-0 transform transition-transform duration-200 ${mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
-        <div>
+      <aside className={`fixed lg:static inset-y-0 left-0 z-50 w-64 bg-[#0d1222]/95 border-r border-zinc-800/80 flex flex-col overflow-y-auto shrink-0 transform transition-transform duration-200 ${mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
+        <div className="flex flex-col flex-1 min-h-0">
           {/* Mobile close button */}
-          <div className="flex justify-end p-2 lg:hidden">
+          <div className="flex justify-end p-2 lg:hidden shrink-0">
             <button onClick={closeMobileSidebar} className="h-7 w-7 rounded-full bg-zinc-900 flex items-center justify-center text-zinc-400 hover:text-white">
               <X size={14} />
             </button>
           </div>
           {/* Logo Brand */}
-          <div className="p-6 border-b border-zinc-800/80 flex items-center gap-3">
+          <div className="p-6 border-b border-zinc-800/80 flex items-center gap-3 shrink-0">
             <img src={logoImg} alt="Logo" className="h-8" />
             <div className="min-w-0 flex-1">
               <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-mono">Ops Control Center</span>
@@ -455,7 +455,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, title }) => {
           </div>
 
           {/* Navigation Links */}
-          <nav className="p-4 space-y-1" onClick={closeMobileSidebar}>
+          <nav className="p-4 space-y-1 flex-1" onClick={closeMobileSidebar}>
             {!isAttendant && (
             <NavLink 
               to="/" 
