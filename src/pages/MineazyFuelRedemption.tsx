@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useFleet } from '../context/FleetContext';
 import { FuelRequisition } from '../types';
+import { jsPDF } from 'jspdf';
 
 export const MineazyFuelRedemption: React.FC = () => {
   const { fuelRequisitions, redeemRequisition, prepaidFuelBalance, activeUser, logout } = useFleet();
@@ -101,6 +102,63 @@ export const MineazyFuelRedemption: React.FC = () => {
     } else {
       setMatchedReq(null);
     }
+  };
+
+  const exportCSV = () => {
+    const rows = [['Voucher ID','Truck','Driver','Fuel Type','Litres','Cost','Gas Station','License Plate']];
+    todayRedeemed.forEach(r => rows.push([
+      r.id, r.truckPlate || '', r.driverName || '', r.fuelType,
+      String(r.redeemedActualLitres || 0), String(r.redeemedActualCost || 0),
+      r.redeemedByGasStation || '', ''
+    ]));
+    rows.push(['','','','','','','','']);
+    rows.push(['TOTAL VOUCHERS', String(todayRedeemed.length),'','','','','','']);
+    rows.push(['TOTAL DIESEL', String(todayDiesel),'','','','','','']);
+    rows.push(['TOTAL PETROL', String(todayPetrol),'','','','','','']);
+    rows.push(['TOTAL COST', String(todayTotalCost),'','','','','','']);
+    const csv = rows.map(r => r.map(c => `"${c.replace(/"/g,'""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `DayEndReport_${today}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportPDF = () => {
+    const doc = new jsPDF();
+    const M = 14, w = doc.internal.pageSize.getWidth();
+    let y = M + 10;
+    doc.setFontSize(14); doc.text('Day End Report', w / 2, y, { align: 'center' }); y += 8;
+    doc.setFontSize(9); doc.text(`${today} · ${activeUser?.name}`, w / 2, y, { align: 'center' }); y += 10;
+    if (todayRedeemed.length === 0) {
+      doc.setFontSize(11); doc.text('No redemptions recorded today', w / 2, y); y += 10;
+    } else {
+      doc.setFontSize(8);
+      const cols = [M, M + 30, M + 55, M + 80, M + 100, M + 118, M + 140];
+      const hdrs = ['Voucher','Truck','Driver','Fuel','Litres','Cost','Station'];
+      hdrs.forEach((h, i) => doc.text(h, cols[i], y));
+      y += 5;
+      doc.line(M, y, w - M, y); y += 4;
+      todayRedeemed.forEach(r => {
+        doc.text(r.id.slice(-8), cols[0], y);
+        doc.text(r.truckPlate || '', cols[1], y);
+        doc.text(r.driverName || '', cols[2], y);
+        doc.text(r.fuelType, cols[3], y);
+        doc.text(String(r.redeemedActualLitres || 0), cols[4], y);
+        doc.text(`$${r.redeemedActualCost || 0}`, cols[5], y);
+        doc.text(r.redeemedByGasStation || '', cols[6], y);
+        y += 5;
+        if (y > 270) { doc.addPage(); y = M + 10; }
+      });
+      y += 6;
+      doc.line(M, y, w - M, y); y += 6;
+      doc.setFontSize(10);
+      doc.text(`Total Vouchers: ${todayRedeemed.length}`, M, y); y += 6;
+      doc.text(`Diesel: ${todayDiesel.toLocaleString()} L`, M, y); y += 6;
+      doc.text(`Petrol: ${todayPetrol.toLocaleString()} L`, M, y); y += 6;
+      doc.text(`Total Cost: $${todayTotalCost.toLocaleString()}`, M, y);
+    }
+    doc.save(`DayEndReport_${today}.pdf`);
   };
 
   const handleRedeem = (e: React.FormEvent) => {
@@ -231,12 +289,20 @@ export const MineazyFuelRedemption: React.FC = () => {
                   </div>
                 </div>
 
-                <button
-                  onClick={() => window.print()}
-                  className="w-full py-3 bg-orange-600 hover:bg-orange-500 text-black font-black text-sm rounded-xl uppercase tracking-wider cursor-pointer transition-colors"
-                >
-                  PRINT REPORT
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={exportPDF}
+                    className="flex-1 py-3 bg-orange-600 hover:bg-orange-500 text-black font-black text-sm rounded-xl uppercase tracking-wider cursor-pointer transition-colors"
+                  >
+                    PDF
+                  </button>
+                  <button
+                    onClick={exportCSV}
+                    className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 text-black font-black text-sm rounded-xl uppercase tracking-wider cursor-pointer transition-colors"
+                  >
+                    CSV
+                  </button>
+                </div>
               </>
             )}
           </div>
