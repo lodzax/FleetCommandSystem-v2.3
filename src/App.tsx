@@ -16,6 +16,8 @@ import { Profile } from './pages/Profile';
 import { Settings } from './pages/Settings';
 import { UserManagement } from './pages/UserManagement';
 import { PendingVerification } from './pages/PendingVerification';
+import { UserGuide } from './pages/UserGuide';
+import { ScannerRedemption } from './pages/ScannerRedemption';
 import { Auth } from './pages/Auth';
 
 function AppRoutes() {
@@ -81,6 +83,8 @@ function AppRoutes() {
         <Route path="/verify" element={<VerifyRequisition />} />
         
         <Route path="/profile" element={isAttendant ? <Navigate to="/redemption" replace /> : <Profile />} />
+        <Route path="/scan" element={<ScannerRedemption />} />
+        <Route path="/guide" element={<UserGuide />} />
         <Route path="/settings" element={canAccessSettings ? <Settings /> : <Navigate to={fallbackRoute} replace />} />
         <Route path="/users" element={role === 'Administrator' ? <UserManagement /> : <Navigate to={fallbackRoute} replace />} />
         

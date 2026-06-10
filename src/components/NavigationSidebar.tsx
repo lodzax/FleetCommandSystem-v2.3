@@ -4,8 +4,8 @@ import { useFleet } from '../context/FleetContext';
 import { api } from '../api';
 import { 
   LayoutDashboard, Radio, Briefcase, Users, Truck, Wrench, Fuel, User as UserIcon, 
-  Bell, FileText, X, Printer, ShieldAlert, CheckCircle, Flame,
-  Settings as SettingsIcon, Download, LogOut, Landmark, Menu
+  Bell, FileText, X, Printer, ShieldAlert, CheckCircle, Flame, BookOpen,
+  Settings as SettingsIcon, Download, LogOut, Landmark, Menu, ScanLine
 } from 'lucide-react';
 import logoImg from '../../assets/logo.png';
 
@@ -556,6 +556,14 @@ export const Layout: React.FC<LayoutProps> = ({ children, title }) => {
               </NavLink>
             )}
 
+            <NavLink 
+              to="/scan" 
+              className={({ isActive }) => navLinkClass(isActive)}
+            >
+              <ScanLine size={18} />
+              <span>Fuel Scanner</span>
+            </NavLink>
+
             {showReports && (
               <NavLink 
                 to="/reports" 
@@ -575,6 +583,14 @@ export const Layout: React.FC<LayoutProps> = ({ children, title }) => {
               <span>Profile</span>
             </NavLink>
             )}
+
+            <NavLink 
+              to="/guide" 
+              className={({ isActive }) => navLinkClass(isActive)}
+            >
+              <BookOpen size={18} />
+              <span>User Guide</span>
+            </NavLink>
 
             {showSettings && (
               <NavLink 
