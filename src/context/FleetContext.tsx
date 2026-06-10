@@ -54,7 +54,7 @@ interface FleetContextType {
   verifyRequisition: (id: string) => void;
   approveRequisition: (id: string) => Promise<void>;
   rejectRequisition: (id: string, reason: string) => void;
-  redeemRequisition: (id: string, redeemData: { redeemedByGasStation: string; redeemedAttendantSignature: string; redeemedActualLitres: number; redeemedActualCost: number; odometer: number }) => void;
+  redeemRequisition: (id: string, redeemData: { redeemedByGasStation: string; redeemedAttendantSignature: string; redeemedActualLitres: number; redeemedActualCost: number; licensePlate: string }) => void;
   addBranch: (branch: Omit<Branch, 'id'>) => void;
   setTheme: (t: string) => void;
   setLogoText: (l: string) => void;
@@ -891,7 +891,7 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     redeemedAttendantSignature: string; 
     redeemedActualLitres: number; 
     redeemedActualCost: number;
-    odometer: number;
+    licensePlate: string;
   }) => {
     const target = fuelRequisitions.find(r => r.id === id);
     if (!target) return;
@@ -905,7 +905,8 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           redeemedByGasStation: rd.redeemedByGasStation,
           redeemedAttendantSignature: rd.redeemedAttendantSignature,
           redeemedActualLitres: rd.redeemedActualLitres,
-          redeemedActualCost: rd.redeemedActualCost
+          redeemedActualCost: rd.redeemedActualCost,
+          truckPlate: rd.licensePlate
         };
       }
       return r;
@@ -915,12 +916,12 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const newLog: FuelLog = {
       id: `FL-${Math.floor(900 + Math.random() * 100)}`,
       truckId: target.truckId,
-      truckPlate: target.truckPlate || 'N/A',
+      truckPlate: rd.licensePlate || target.truckPlate || 'N/A',
       driverId: target.driverId,
       driverName: target.driverName || 'N/A',
       litres: rd.redeemedActualLitres,
       cost: rd.redeemedActualCost,
-      odometer: rd.odometer,
+      odometer: 0,
       location: rd.redeemedByGasStation,
       date: new Date().toISOString().split('T')[0],
       fuelType: target.fuelType || 'Diesel'

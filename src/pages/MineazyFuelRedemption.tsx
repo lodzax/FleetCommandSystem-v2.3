@@ -12,7 +12,7 @@ export const MineazyFuelRedemption: React.FC = () => {
   const [gasStationName, setGasStationName] = useState('');
   const [actualLitres, setActualLitres] = useState(0);
   const [actualCost, setActualCost] = useState(0);
-  const [odometer, setOdometer] = useState(0);
+  const [licensePlate, setLicensePlate] = useState('');
   const [attendantSig, setAttendantSig] = useState(() => activeUser?.name || '');
   const [gasStations, setGasStations] = useState<string[]>(() => {
     try {
@@ -42,7 +42,7 @@ export const MineazyFuelRedemption: React.FC = () => {
         setMatchedReq(null);
         setActualLitres(0);
         setActualCost(0);
-        setOdometer(0);
+        setLicensePlate('');
         setGasStationName('');
         setAttendantSig(activeUser?.name || '');
         tokenRef.current?.focus();
@@ -103,9 +103,9 @@ export const MineazyFuelRedemption: React.FC = () => {
       redeemedAttendantSignature: attendantSig,
       redeemedActualLitres: actualLitres,
       redeemedActualCost: actualCost,
-      odometer
+      licensePlate
     });
-    setRedeemSuccess(`${actualLitres}L dispensed to ${matchedReq.truckPlate}. Odometer: ${odometer}km`);
+    setRedeemSuccess(`${actualLitres}L dispensed to ${matchedReq.truckPlate}. Plate: ${licensePlate}`);
   };
 
   return (
@@ -205,12 +205,6 @@ export const MineazyFuelRedemption: React.FC = () => {
                 <span className="text-zinc-500">Fuel:</span>
                 <span className="text-white font-bold">{matchedReq.fuelType || 'Diesel'} · {matchedReq.litresRequested}L</span>
               </div>
-              {matchedReq.odometerReading ? (
-                <div className="flex justify-between">
-                  <span className="text-zinc-500">Requested Odometer:</span>
-                  <span className="text-white font-bold">{matchedReq.odometerReading} km</span>
-                </div>
-              ) : null}
               <div className="flex justify-between">
                 <span className="text-zinc-500">Branch:</span>
                 <span className="text-white font-bold">{matchedReq.branchName || '-'}</span>
@@ -239,10 +233,11 @@ export const MineazyFuelRedemption: React.FC = () => {
                     className="w-full bg-zinc-950 border-2 border-zinc-700 rounded-lg px-3 py-3 text-white text-sm text-center font-bold" />
                 </div>
                 <div>
-                  <label className="block text-zinc-500 text-[9px] uppercase font-bold mb-1">Odometer</label>
-                  <input type="number" required value={odometer}
-                    onChange={(e) => setOdometer(parseInt(e.target.value) || 0)}
-                    className="w-full bg-zinc-950 border-2 border-zinc-700 rounded-lg px-3 py-3 text-white text-sm text-center font-bold" />
+                  <label className="block text-zinc-500 text-[9px] uppercase font-bold mb-1">License Plate</label>
+                  <input type="text" required value={licensePlate}
+                    onChange={(e) => setLicensePlate(e.target.value.toUpperCase())}
+                    className="w-full bg-zinc-950 border-2 border-zinc-700 rounded-lg px-3 py-3 text-white text-sm text-center font-bold"
+                    placeholder="ABC123" />
                 </div>
               </div>
 
