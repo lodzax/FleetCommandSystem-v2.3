@@ -556,6 +556,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, title }) => {
               </NavLink>
             )}
 
+            {showRedemption && (
             <NavLink 
               to="/redemption" 
               className={({ isActive }) => navLinkClass(isActive)}
@@ -563,6 +564,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, title }) => {
               <ScanLine size={18} />
               <span>Fuel Scanner</span>
             </NavLink>
+            )}
 
             {showReports && (
               <NavLink 
