@@ -28,6 +28,11 @@ export const MineazyFuelRedemption: React.FC = () => {
   const [newStation, setNewStation] = useState('');
   const [showMenu, setShowMenu] = useState(false);
 
+  const redeemedReqs = fuelRequisitions.filter(r => r.status === 'Redeemed');
+  const vouchersRedeemed = redeemedReqs.length;
+  const dieselRedeemed = redeemedReqs.filter(r => r.fuelType === 'Diesel').reduce((s, r) => s + (r.redeemedActualLitres || 0), 0);
+  const petrolRedeemed = redeemedReqs.filter(r => r.fuelType === 'Petrol').reduce((s, r) => s + (r.redeemedActualLitres || 0), 0);
+
   const tokenRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -143,6 +148,23 @@ export const MineazyFuelRedemption: React.FC = () => {
             <div className="flex-1 bg-zinc-950/50 rounded p-2 text-center">
               <p className="text-zinc-500">Petrol</p>
               <p className="text-emerald-400 font-bold text-lg">{prepaidFuelBalance.petrol.toLocaleString()} L</p>
+            </div>
+          </div>
+          <div className="border-t border-zinc-800 pt-2">
+            <p className="text-zinc-600 text-[9px] uppercase tracking-wider mb-2 text-center">Redeemed Metrics</p>
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div className="bg-zinc-950/50 rounded p-2">
+                <p className="text-zinc-500 text-[10px]">Vouchers</p>
+                <p className="text-orange-400 font-bold text-lg">{vouchersRedeemed}</p>
+              </div>
+              <div className="bg-zinc-950/50 rounded p-2">
+                <p className="text-zinc-500 text-[10px]">Diesel</p>
+                <p className="text-blue-400 font-bold text-lg">{dieselRedeemed.toLocaleString()} L</p>
+              </div>
+              <div className="bg-zinc-950/50 rounded p-2">
+                <p className="text-zinc-500 text-[10px]">Petrol</p>
+                <p className="text-emerald-400 font-bold text-lg">{petrolRedeemed.toLocaleString()} L</p>
+              </div>
             </div>
           </div>
         </div>
