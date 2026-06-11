@@ -6,6 +6,7 @@ import {
   Plus, X, Eye, ThumbsUp, ThumbsDown, Download, Fuel
 } from 'lucide-react';
 import { FuelRequisition } from '../types';
+import { Barcode } from '../components/Barcode';
 import logoImg from '../../assets/logo.png';
 
 export const RequisitionsPipeline: React.FC = () => {
@@ -551,6 +552,11 @@ export const RequisitionsPipeline: React.FC = () => {
                           Token: <span className="underline select-all tracking-widest">{r.redeemToken}</span>
                         </div>
                       )}
+                      {r.status === 'Approved' && r.redeemToken && (r.submittedById === activeUser?.id || r.driverId === activeUser?.id) && (
+                        <div className="mt-1">
+                          <Barcode value={r.redeemToken} className="bg-white rounded" />
+                        </div>
+                      )}
                       {r.status === 'Approved' && r.qrCodeData && (r.submittedById === activeUser?.id || r.driverId === activeUser?.id) && (
                         <div className="mt-1.5">
                           <img 
@@ -993,6 +999,9 @@ export const RequisitionsPipeline: React.FC = () => {
                 <div className="bg-yellow-500/5 border border-yellow-500/20 p-3 rounded text-center">
                   <span className="text-[9px] text-zinc-500 uppercase font-mono block">Redeem Token</span>
                   <p className="text-yellow-400 font-bold font-mono text-sm tracking-widest mt-1">{viewRequisition.redeemToken}</p>
+                  <div className="flex justify-center mt-2">
+                    <Barcode value={viewRequisition.redeemToken} className="bg-white rounded" />
+                  </div>
                 </div>
               )}
 

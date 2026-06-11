@@ -1,5 +1,6 @@
 import React from 'react';
 import { useFleet } from '../context/FleetContext';
+import { Barcode } from '../components/Barcode';
 import { CheckCircle, XCircle, Shield, Hash, Calendar, User2, Fuel, Building2, FileText, Truck } from 'lucide-react';
 
 export const VerifyRequisition: React.FC = () => {
@@ -125,7 +126,8 @@ export const VerifyRequisition: React.FC = () => {
                   <Shield size={12} className="text-orange-400" />
                   <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-mono">Redeem Token</span>
                 </div>
-                <p className="text-sm font-bold font-mono tracking-widest text-yellow-400">{redeemToken}</p>
+                <p className="text-sm font-bold font-mono tracking-widest text-yellow-400 mb-2">{redeemToken}</p>
+                <Barcode value={redeemToken} className="bg-white rounded" />
               </div>
 
               <div className="bg-zinc-950/40 p-3.5 rounded-lg border border-zinc-850">
