@@ -27,7 +27,7 @@ if (!JWT_SECRET) {
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-// ── MySQL Pool ──
+// ── MySQL Pool (TLS for TiDB/cloud) ──
 const pool = mysql.createPool({
   host: process.env.DB_HOST || 'localhost',
   port: parseInt(process.env.DB_PORT || '3306'),
@@ -36,7 +36,8 @@ const pool = mysql.createPool({
   database: process.env.DB_NAME || 'fleetcommand',
   waitForConnections: true,
   connectionLimit: 10,
-  queueLimit: 0
+  queueLimit: 0,
+  ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: true } : false
 });
 
 // ── JWT Auth Middleware ──
