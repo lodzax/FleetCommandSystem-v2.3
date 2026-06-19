@@ -131,6 +131,7 @@ export interface FuelRequisition {
   redeemToken?: string;
   redeemDate?: string;
   redeemedByGasStation?: string;
+  redeemedDrawdownVoucher?: string;
   redeemedAttendantSignature?: string;
   redeemedActualLitres?: number;
   redeemedActualCost?: number;
@@ -138,6 +139,7 @@ export interface FuelRequisition {
   submittedById?: string;
   destination?: string;
   odometerReading?: number;
+  fillingStation?: string;
 }
 
 export interface Branch {

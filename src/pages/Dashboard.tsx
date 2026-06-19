@@ -1,6 +1,7 @@
 import React from 'react';
 import { useFleet } from '../context/FleetContext';
 import { Layout } from '../components/NavigationSidebar';
+import { PaginatedTable, Column } from '../components/PaginatedTable';
 import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
 import { getTruckMarker, getHubMarker } from '../utils/leafletIcons';
 import { 
@@ -293,53 +294,55 @@ export const Dashboard: React.FC = () => {
               <Link to="/jobs" className="text-xs text-orange-500 hover:text-orange-400 font-semibold">Freight Manager</Link>
             </div>
 
-            <div className="overflow-x-auto">
-              {ongoingJobs.length === 0 ? (
-                <div className="text-center py-12 text-zinc-500 font-medium">No active or assigned cargo flows</div>
-              ) : (
-                <table className="w-full text-left text-xs bg-zinc-950/20 border border-zinc-850 rounded">
-                  <thead>
-                    <tr className="border-b border-zinc-800 bg-zinc-900/40 text-zinc-400 font-mono">
-                      <th className="p-3">Job ID</th>
-                      <th className="p-3">Cargo Spec</th>
-                      <th className="p-3">Route Corridors</th>
-                      <th className="p-3">Staff / Truck</th>
-                      <th className="p-3">Operational Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-zinc-850">
-                    {ongoingJobs.map(j => (
-                      <tr key={j.id} className="text-zinc-300 hover:bg-zinc-900/10">
-                        <td className="p-3 font-mono text-orange-500 font-bold">{j.id}</td>
-                        <td className="p-3">
-                          <p className="font-semibold text-white">{j.cargoType}</p>
-                          <span className="text-[10px] text-zinc-500 font-mono">{j.weight} Tons</span>
-                        </td>
-                        <td className="p-3">
-                          <div className="flex items-center gap-1.5 text-zinc-400 font-medium text-[11px]">
-                            <span className="truncate">{j.source.split(' ')[0]}</span>
-                            <ArrowRight size={12} className="text-zinc-650" />
-                            <span className="truncate">{j.destination.split(' ')[0]}</span>
-                          </div>
-                        </td>
-                        <td className="p-3">
-                          <p className="text-zinc-200">{j.driverName || 'Unassigned'}</p>
-                          <span className="text-[10px] text-zinc-500 font-mono uppercase bg-zinc-900 py-0.5 px-1 mt-0.5 inline-block rounded border border-zinc-850">{j.truckPlate || 'Unassigned'}</span>
-                        </td>
-                        <td className="p-3">
-                          <div className="flex items-center gap-2">
-                            <span className={`inline-block h-1.5 w-1.5 rounded-full ${j.status === 'In Transit' ? 'bg-orange-500 animate-pulse' : 'bg-zinc-500'}`}></span>
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold ${
-                              j.status === 'In Transit' ? 'bg-orange-500/10 text-orange-400' : 'bg-indigo-500/10 text-indigo-400'
-                            }`}>{j.status}</span>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
+            <PaginatedTable
+              data={ongoingJobs}
+              searchFields={['id', 'cargoType', 'driverName', 'truckPlate', 'source', 'destination']}
+              pageSize={10}
+              keyExtractor={j => j.id}
+              emptyMessage="No active deliveries in progress."
+              columns={[
+                { header: 'Job ID', accessor: 'id', sortable: true, className: 'font-mono text-orange-500 font-bold' },
+                {
+                  header: 'Cargo Spec',
+                  sortable: true,
+                  render: j => (
+                    <div>
+                      <p className="font-semibold text-white">{j.cargoType}</p>
+                      <span className="text-[10px] text-zinc-500 font-mono">{j.weight} Tons</span>
+                    </div>
+                  )
+                },
+                {
+                  header: 'Route Corridors',
+                  render: j => (
+                    <div className="flex items-center gap-1.5 text-zinc-400 font-medium text-[11px]">
+                      <span className="truncate">{j.source.split(' ')[0]}</span>
+                      <ArrowRight size={12} className="text-zinc-650" />
+                      <span className="truncate">{j.destination.split(' ')[0]}</span>
+                    </div>
+                  )
+                },
+                {
+                  header: 'Staff / Truck',
+                  render: j => (
+                    <div>
+                      <p className="text-zinc-200">{j.driverName || 'Unassigned'}</p>
+                      <span className="text-[10px] text-zinc-500 font-mono uppercase bg-zinc-900 py-0.5 px-1 mt-0.5 inline-block rounded border border-zinc-850">{j.truckPlate || 'Unassigned'}</span>
+                    </div>
+                  )
+                },
+                {
+                  header: 'Operational Status',
+                  sortable: true,
+                  render: j => (
+                    <div className="flex items-center gap-2">
+                      <span className={`inline-block h-1.5 w-1.5 rounded-full ${j.status === 'In Transit' ? 'bg-orange-500 animate-pulse' : 'bg-zinc-500'}`}></span>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold ${j.status === 'In Transit' ? 'bg-orange-500/10 text-orange-400' : 'bg-indigo-500/10 text-indigo-400'}`}>{j.status}</span>
+                    </div>
+                  )
+                },
+              ]}
+            />
           </div>
 
           {/* Maintenance Alerts on bottom-right */}

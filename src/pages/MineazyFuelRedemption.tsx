@@ -3,6 +3,7 @@ import { useFleet } from '../context/FleetContext';
 import { FuelRequisition } from '../types';
 import { jsPDF } from 'jspdf';
 import { Html5Qrcode } from 'html5-qrcode';
+import { drawFrame, docHeader, docFooter, kpiRow, tableHeader, tableRow, pw, ph } from '../utils/pdfHelpers';
 import toast from 'react-hot-toast';
 
 export const MineazyFuelRedemption: React.FC = () => {
@@ -157,38 +158,36 @@ export const MineazyFuelRedemption: React.FC = () => {
 
   const exportPDF = () => {
     const doc = new jsPDF();
-    const M = 14, w = doc.internal.pageSize.getWidth();
-    let y = M + 10;
-    doc.setFontSize(14); doc.text('Day End Report', w / 2, y, { align: 'center' }); y += 8;
-    doc.setFontSize(9); doc.text(`${today} · ${activeUser?.name}`, w / 2, y, { align: 'center' }); y += 10;
+    drawFrame(doc);
+    let y = docHeader(doc, 'DAY END REPORT — FUEL REDEMPTION', `${today} · Daily dispensing summary and reconciliation`, activeUser?.name || 'System');
+
     if (todayRedeemed.length === 0) {
-      doc.setFontSize(11); doc.text('No redemptions recorded today', w / 2, y); y += 10;
-    } else {
-      doc.setFontSize(8);
-      const cols = [M, M + 30, M + 55, M + 80, M + 100, M + 118, M + 140];
-      const hdrs = ['Voucher','Truck','Driver','Fuel','Litres','Cost','Station'];
-      hdrs.forEach((h, i) => doc.text(h, cols[i], y));
-      y += 5;
-      doc.line(M, y, w - M, y); y += 4;
-      todayRedeemed.forEach(r => {
-        doc.text(r.id.slice(-8), cols[0], y);
-        doc.text(r.truckPlate || '', cols[1], y);
-        doc.text(r.driverName || '', cols[2], y);
-        doc.text(r.fuelType, cols[3], y);
-        doc.text(String(r.redeemedActualLitres || 0), cols[4], y);
-        doc.text(`$${r.redeemedActualCost || 0}`, cols[5], y);
-        doc.text(r.redeemedByGasStation || '', cols[6], y);
-        y += 5;
-        if (y > 270) { doc.addPage(); y = M + 10; }
-      });
-      y += 6;
-      doc.line(M, y, w - M, y); y += 6;
+      doc.setFont('helvetica', 'normal');
       doc.setFontSize(10);
-      doc.text(`Total Vouchers: ${todayRedeemed.length}`, M, y); y += 6;
-      doc.text(`Diesel: ${todayDiesel.toLocaleString()} L`, M, y); y += 6;
-      doc.text(`Petrol: ${todayPetrol.toLocaleString()} L`, M, y); y += 6;
-      doc.text(`Total Cost: $${todayTotalCost.toLocaleString()}`, M, y);
+      doc.setTextColor(120, 125, 140);
+      doc.text('No redemptions recorded today', pw(doc) / 2, y + 20, { align: 'center' });
+    } else {
+      y = kpiRow(doc, [
+        { label: 'Vouchers Redeemed', value: String(todayRedeemed.length) },
+        { label: 'Diesel Dispensed', value: `${todayDiesel.toLocaleString()} L` },
+        { label: 'Petrol Dispensed', value: `${todayPetrol.toLocaleString()} L` },
+        { label: 'Total Cost', value: `$${todayTotalCost.toLocaleString()}` },
+      ], y);
+
+      const cols = [22, 46, 72, 100, 122, 142, 166, pw(doc) - 16];
+      y = tableHeader(doc, cols, ['Voucher', 'Truck', 'Driver', 'Fuel', 'Litres', 'Cost', 'Station', 'License'], y);
+
+      todayRedeemed.forEach((r, idx) => {
+        if (y > ph(doc) - 18) { doc.addPage(); drawFrame(doc); y = 24; }
+        y = tableRow(doc, cols, [
+          r.id.slice(-8), r.truckPlate || '', r.driverName || '', r.fuelType,
+          String(r.redeemedActualLitres || 0), `$${r.redeemedActualCost || 0}`,
+          r.redeemedByGasStation || '', r.licensePlate || ''
+        ], y, idx);
+      });
     }
+
+    docFooter(doc);
     doc.save(`DayEndReport_${today}.pdf`);
   };
 

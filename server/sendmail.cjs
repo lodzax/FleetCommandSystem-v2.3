@@ -1,18 +1,33 @@
 const nodemailer = require('nodemailer');
 
-const transporter = nodemailer.createTransport({
-  host: 'mail.mineazy.co.zw',
-  port: 465,
-  secure: true,
-  auth: {
-    user: 'notifications@mineazy.co.zw',
-    pass: 'M1n3@zy2026'
+let transporter = null;
+
+function getTransporter() {
+  if (!transporter) {
+    const host = process.env.SMTP_HOST || 'mail.mineazy.co.zw';
+    const port = parseInt(process.env.SMTP_PORT || '465');
+    const secure = port === 465;
+    const user = process.env.SMTP_USER || 'notifications@mineazy.co.zw';
+    const pass = process.env.SMTP_PASS;
+    const fromName = process.env.SMTP_FROM_NAME || 'FleetCommand Notifications';
+    const fromEmail = process.env.SMTP_FROM_EMAIL || user;
+
+    transporter = nodemailer.createTransport({
+      host,
+      port,
+      secure,
+      auth: { user, pass },
+    });
   }
-});
+  return transporter;
+}
 
 function sendNotification({ to, subject, body }) {
-  return transporter.sendMail({
-    from: '"FleetCommand Notifications" <notifications@mineazy.co.zw>',
+  const fromEmail = process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER || 'notifications@mineazy.co.zw';
+  const fromName = process.env.SMTP_FROM_NAME || 'FleetCommand Notifications';
+  const t = getTransporter();
+  return t.sendMail({
+    from: `"${fromName}" <${fromEmail}>`,
     to,
     subject,
     html: body

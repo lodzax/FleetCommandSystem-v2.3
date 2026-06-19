@@ -36,6 +36,7 @@ export const api = {
   login: (email: string, password: string) => request<{ success: boolean; user: any; token: string }>('POST', '/auth/login', { email, password }),
   signup: (name: string, email: string, password: string, role: string) => request<{ success: boolean; message: string }>('POST', '/auth/signup', { name, email, password, role }),
   verifyPassword: (userId: string, password: string) => request<{ valid: boolean }>('POST', '/auth/verify-password', { userId, password }),
+  changePassword: (currentPassword: string, newPassword: string) => request<{ success: boolean; message: string }>('PUT', '/auth/change-password', { currentPassword, newPassword }),
 
   // Users
   getUsers: () => request<any[]>('GET', '/users'),
@@ -94,6 +95,10 @@ export const api = {
   // Settings
   getSettings: () => request<Record<string, string>>('GET', '/settings'),
   saveSetting: (key: string, value: string) => request<any>('PUT', `/settings/${key}`, { value }),
+
+  // Fuel Balance Logs
+  getFuelBalanceLogs: () => request<any[]>('GET', '/fuel-balance-logs'),
+  saveFuelBalanceLog: (b: any) => request<any>('POST', '/fuel-balance-logs', b),
 
   // Reset
   resetAll: () => request<any>('POST', '/reset'),

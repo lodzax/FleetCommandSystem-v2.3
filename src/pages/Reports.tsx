@@ -5,298 +5,225 @@ import { jsPDF } from 'jspdf';
 import {
   Radio, Briefcase, Users, Truck, Wrench, Droplet, FileText, Download
 } from 'lucide-react';
+import {
+  drawFrame, docHeader, docFooter, kpiRow,
+  tableHeader, tableRow, checkPage, sectionTitle, pw, ph
+} from '../utils/pdfHelpers';
 
 export const Reports: React.FC = () => {
   const { trucks, drivers, jobs, maintenance, fuelLogs, fuelRequisitions, dispatches, branches, activeUser } = useFleet();
 
-  const M = 14;
-  const sep = (doc: jsPDF, y: number) => {
-    const w = doc.internal.pageSize.getWidth();
-    doc.setDrawColor(180);
-    doc.line(M, y, w - M, y);
+  const startReport = (title: string, subtitle: string) => {
+    const doc = new jsPDF('landscape');
+    drawFrame(doc);
+    const y = docHeader(doc, title, subtitle, activeUser?.name || 'System');
+    return { doc, y };
   };
 
-  const header = (doc: jsPDF, title: string, subtitle: string, y: number): number => {
-    const w = doc.internal.pageSize.getWidth();
-    doc.setFontSize(14);
-    doc.setFont('helvetica', 'bold');
-    doc.text(title, w / 2, y, { align: 'center' });
-    y += 6;
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'normal');
-    doc.text(subtitle, w / 2, y, { align: 'center' });
-    y += 4;
-    doc.setFontSize(7);
-    doc.text(`Generated: ${new Date().toLocaleString()} | By: ${activeUser?.name || 'System'} | FleetCommand v2.3`, w / 2, y, { align: 'center' });
-    y += 5;
-    sep(doc, y);
-    return y + 5;
-  };
-
-  const footer = (doc: jsPDF) => {
-    const w = doc.internal.pageSize.getWidth();
-    const h = doc.internal.pageSize.getHeight();
-    const pages = doc.getNumberOfPages();
-    for (let i = 1; i <= pages; i++) {
-      doc.setPage(i);
-      doc.setFontSize(6);
-      doc.setFont('helvetica', 'italic');
-      doc.text(`Page ${i} of ${pages} | FleetCommand Operations`, w / 2, h - 8, { align: 'center' });
-    }
-  };
-
-  const headerRow = (doc: jsPDF, cols: number[], headers: string[], y: number, fontSize = 7) => {
-    doc.setFontSize(fontSize);
-    doc.setFont('helvetica', 'bold');
-    headers.forEach((h, i) => doc.text(h, cols[i], y));
-  };
-
-  const checkPage = (doc: jsPDF, y: number): number => {
-    const h = doc.internal.pageSize.getHeight();
-    if (y > h - 16) {
+  const maybeBreak = (doc: jsPDF, y: number) => {
+    if (y > ph(doc) - 16) {
       doc.addPage();
-      return 18;
+      drawFrame(doc);
+      return 24;
     }
     return y;
   };
 
   // ── 1. DISPATCH REPORT ──
   const downloadDispatchReport = () => {
-    const doc = new jsPDF('landscape');
-    const w = doc.internal.pageSize.getWidth();
-    let y = header(doc, 'DISPATCH OPERATIONS REPORT', 'Active routes, cargo dispatches, and point-to-point delivery schedules.', 18);
+    const { doc, y: startY } = startReport(
+      'DISPATCH OPERATIONS REPORT',
+      'Active routes, cargo dispatches, and point-to-point delivery schedules.'
+    );
+    let y = startY;
 
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Active Transit: ${jobs.filter(j => j.status === 'In Transit').length}  |  Pending: ${jobs.filter(j => j.status === 'Pending').length}  |  Assigned: ${jobs.filter(j => j.status === 'Assigned').length}  |  Pending Revenue: $${jobs.filter(j => j.status !== 'Completed').reduce((s, j) => s + j.income, 0).toLocaleString()}`, M, y);
-    y += 7;
-    sep(doc, y);
-    y += 5;
+    y = kpiRow(doc, [
+      { label: 'Active Transit', value: String(jobs.filter(j => j.status === 'In Transit').length) },
+      { label: 'Pending', value: String(jobs.filter(j => j.status === 'Pending').length) },
+      { label: 'Assigned', value: String(jobs.filter(j => j.status === 'Assigned').length) },
+      { label: 'Pending Revenue', value: `$${jobs.filter(j => j.status !== 'Completed').reduce((s, j) => s + j.income, 0).toLocaleString()}` },
+    ], y);
 
-    const cols = [M, 35, 80, 130, 165, 195, 220, 250];
-    headerRow(doc, cols, ['Job ID', 'Route', 'Cargo', 'Driver', 'Truck', 'Status', 'Income', 'Scheduled'], y);
-    y += 3;
-    sep(doc, y);
-    y += 4;
+    const cols = [22, 48, 95, 145, 172, 200, 228, 260];
+    y = tableHeader(doc, cols, ['Job ID', 'Route', 'Cargo', 'Driver', 'Truck', 'Status', 'Income', 'Scheduled'], y);
 
-    doc.setFontSize(6);
-    doc.setFont('helvetica', 'normal');
-    jobs.forEach(j => {
-      y = checkPage(doc, y);
+    jobs.forEach((j, idx) => {
+      y = maybeBreak(doc, y);
       const dName = j.driverName || drivers.find(d => d.id === j.driverId)?.name || '-';
       const tPlate = j.truckPlate || trucks.find(t => t.id === j.truckId)?.plateNumber || '-';
-      doc.text(j.id, cols[0], y);
-      doc.text(`${j.source} → ${j.destination}`, cols[1], y);
-      doc.text(`${j.cargoType} (${j.weight}T)`, cols[2], y);
-      doc.text(dName, cols[3], y);
-      doc.text(tPlate, cols[4], y);
-      doc.text(j.status, cols[5], y);
-      doc.text(`$${j.income.toLocaleString()}`, cols[6], y);
-      doc.text(j.scheduledDate, cols[7], y);
-      y += 4.5;
+      y = tableRow(doc, cols, [
+        j.id, `${j.source} → ${j.destination}`, `${j.cargoType} (${j.weight}T)`,
+        dName, tPlate, j.status, `$${j.income.toLocaleString()}`, j.scheduledDate
+      ], y, idx);
     });
 
-    footer(doc);
+    docFooter(doc);
     doc.save('Dispatch_Report.pdf');
   };
 
   // ── 2. ORDERS REPORT ──
   const downloadJobsReport = () => {
-    const doc = new jsPDF('landscape');
-    let y = header(doc, 'CARGO BOOKING & ORDERS REPORT', 'Contract bookings, payloads, freight class logs, and revenue payouts.', 18);
+    const { doc, y: startY } = startReport(
+      'CARGO BOOKING & ORDERS REPORT',
+      'Contract bookings, payloads, freight class logs, and revenue payouts.'
+    );
+    let y = startY;
 
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Total Jobs: ${jobs.length}  |  Completed: ${jobs.filter(j => j.status === 'Completed').length}  |  Revenue: $${jobs.reduce((s, j) => s + (j.status === 'Completed' ? j.income : 0), 0).toLocaleString()}  |  Pending: $${jobs.filter(j => j.status !== 'Completed').reduce((s, j) => s + j.income, 0).toLocaleString()}`, M, y);
-    y += 7;
-    sep(doc, y);
-    y += 5;
+    const totalRev = jobs.filter(j => j.status === 'Completed').reduce((s, j) => s + j.income, 0);
+    const pendingRev = jobs.filter(j => j.status !== 'Completed').reduce((s, j) => s + j.income, 0);
+    y = kpiRow(doc, [
+      { label: 'Total Jobs', value: String(jobs.length) },
+      { label: 'Completed', value: String(jobs.filter(j => j.status === 'Completed').length) },
+      { label: 'Revenue (Completed)', value: `$${totalRev.toLocaleString()}` },
+      { label: 'Pending Revenue', value: `$${pendingRev.toLocaleString()}` },
+    ], y);
 
-    const cols = [M, 35, 65, 140, 165, 190, 215, 245, 265];
-    headerRow(doc, cols, ['Job ID', 'Cargo', 'Title / Route', 'Source → Dest', 'Weight(T)', 'Status', 'Income', 'Scheduled', 'Est. Hrs'], y);
-    y += 3;
-    sep(doc, y);
-    y += 4;
+    const cols = [22, 48, 78, 138, 165, 192, 215, 242, 268];
+    y = tableHeader(doc, cols, ['Job ID', 'Cargo', 'Title / Route', 'Source → Dest', 'Weight', 'Status', 'Income', 'Scheduled', 'Est. Hrs'], y);
 
-    doc.setFontSize(6);
-    doc.setFont('helvetica', 'normal');
-    jobs.forEach(j => {
-      y = checkPage(doc, y);
-      doc.text(j.id, cols[0], y);
-      doc.text(j.cargoType, cols[1], y);
-      doc.text(j.title, cols[2], y);
-      doc.text(`${j.source} → ${j.destination}`, cols[3], y);
-      doc.text(`${j.weight}`, cols[4], y);
-      doc.text(j.status, cols[5], y);
-      doc.text(`$${j.income.toLocaleString()}`, cols[6], y);
-      doc.text(j.scheduledDate, cols[7], y);
-      doc.text(`${j.estimatedHours}h`, cols[8], y);
-      y += 4.5;
+    jobs.forEach((j, idx) => {
+      y = maybeBreak(doc, y);
+      y = tableRow(doc, cols, [
+        j.id, j.cargoType, j.title, `${j.source} → ${j.destination}`,
+        `${j.weight}T`, j.status, `$${j.income.toLocaleString()}`, j.scheduledDate, `${j.estimatedHours}h`
+      ], y, idx);
     });
 
-    footer(doc);
+    docFooter(doc);
     doc.save('Orders_Report.pdf');
   };
 
   // ── 3. DRIVER DETAILS REPORT ──
   const downloadDriversReport = () => {
-    const doc = new jsPDF('landscape');
-    let y = header(doc, 'DRIVER PERSONNEL REPORT', 'Staff registration, vetting audits, trip scores, and status tallies.', 18);
+    const { doc, y: startY } = startReport(
+      'DRIVER PERSONNEL REPORT',
+      'Staff registration, vetting audits, trip scores, and status tallies.'
+    );
+    let y = startY;
 
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Total: ${drivers.length}  |  On Route: ${drivers.filter(d => d.status === 'On Route').length}  |  Active: ${drivers.filter(d => d.status === 'Active').length}  |  Avg Rating: ${(drivers.reduce((s, d) => s + d.rating, 0) / (drivers.length || 1)).toFixed(2)}`, M, y);
-    y += 7;
-    sep(doc, y);
-    y += 5;
+    const avgRating = drivers.length > 0 ? (drivers.reduce((s, d) => s + d.rating, 0) / drivers.length).toFixed(2) : '0.00';
+    y = kpiRow(doc, [
+      { label: 'Total Drivers', value: String(drivers.length) },
+      { label: 'On Route', value: String(drivers.filter(d => d.status === 'On Route').length) },
+      { label: 'Active', value: String(drivers.filter(d => d.status === 'Active').length) },
+      { label: 'Avg Rating', value: avgRating },
+    ], y);
 
-    const cols = [M, 35, 75, 110, 140, 165, 190, 220, 250, 270];
-    headerRow(doc, cols, ['ID', 'Name', 'License', 'Truck', 'Phone', 'Trips', 'Rating', 'Status', 'Last Active', 'Verified'], y);
-    y += 3;
-    sep(doc, y);
-    y += 4;
+    const cols = [22, 48, 88, 120, 148, 175, 200, 225, 248, 270];
+    y = tableHeader(doc, cols, ['ID', 'Name', 'License', 'Truck', 'Phone', 'Trips', 'Rating', 'Status', 'Last Active', 'Verified'], y);
 
-    doc.setFontSize(6);
-    doc.setFont('helvetica', 'normal');
-    drivers.forEach(d => {
-      y = checkPage(doc, y);
+    drivers.forEach((d, idx) => {
+      y = maybeBreak(doc, y);
       const tPlate = d.assignedTruckPlate || trucks.find(t => t.id === d.assignedTruckId)?.plateNumber || '-';
-      doc.text(d.id, cols[0], y);
-      doc.text(d.name, cols[1], y);
-      doc.text(d.licenseClass, cols[2], y);
-      doc.text(tPlate, cols[3], y);
-      doc.text(d.phone || '-', cols[4], y);
-      doc.text(`${d.tripsCompleted}`, cols[5], y);
-      doc.text(d.rating.toFixed(1), cols[6], y);
-      doc.text(d.status, cols[7], y);
-      doc.text(d.lastActive || '-', cols[8], y);
-      doc.text(d.isVerified ? 'Yes' : 'No', cols[9], y);
-      y += 4.5;
+      y = tableRow(doc, cols, [
+        d.id, d.name, d.licenseClass, tPlate, d.phone || '-',
+        `${d.tripsCompleted}`, d.rating.toFixed(1), d.status, d.lastActive || '-', d.isVerified ? 'Yes' : 'No'
+      ], y, idx);
     });
 
-    footer(doc);
+    docFooter(doc);
     doc.save('Driver_Details_Report.pdf');
   };
 
   // ── 4. FLEET DETAILS REPORT ──
   const downloadFleetReport = () => {
-    const doc = new jsPDF('landscape');
-    let y = header(doc, 'FLEET MACHINERY REPORT', 'Technical specifications, machine ratings, service mileage, and active states.', 18);
+    const { doc, y: startY } = startReport(
+      'FLEET MACHINERY REPORT',
+      'Technical specifications, machine ratings, service mileage, and active states.'
+    );
+    let y = startY;
 
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Total: ${trucks.length}  |  Active: ${trucks.filter(t => t.status === 'Active').length}  |  Maintenance: ${trucks.filter(t => t.status === 'Maintenance').length}  |  Idle: ${trucks.filter(t => t.status === 'Idle').length}`, M, y);
-    y += 7;
-    sep(doc, y);
-    y += 5;
+    y = kpiRow(doc, [
+      { label: 'Total Trucks', value: String(trucks.length) },
+      { label: 'Active', value: String(trucks.filter(t => t.status === 'Active').length) },
+      { label: 'Maintenance', value: String(trucks.filter(t => t.status === 'Maintenance').length) },
+      { label: 'Idle', value: String(trucks.filter(t => t.status === 'Idle').length) },
+    ], y);
 
-    const cols = [M, 35, 62, 120, 148, 175, 200, 225, 250, 270];
-    headerRow(doc, cols, ['ID', 'Plate', 'Type', 'Model', 'Capacity', 'Odometer', 'Next Service', 'Fuel Rate', 'Status', 'Driver'], y);
-    y += 3;
-    sep(doc, y);
-    y += 4;
+    const cols = [22, 48, 78, 135, 162, 188, 212, 236, 256, 274];
+    y = tableHeader(doc, cols, ['ID', 'Plate', 'Type', 'Model', 'Capacity', 'Odometer', 'Next Service', 'Fuel Rate', 'Status', 'Driver'], y);
 
-    doc.setFontSize(6);
-    doc.setFont('helvetica', 'normal');
-    trucks.forEach(t => {
-      y = checkPage(doc, y);
-      doc.text(t.id, cols[0], y);
-      doc.text(t.plateNumber, cols[1], y);
-      doc.text(t.type, cols[2], y);
-      doc.text(t.model, cols[3], y);
-      doc.text(t.capacity, cols[4], y);
-      doc.text(`${t.mileage.toLocaleString()}`, cols[5], y);
-      doc.text(`${t.nextServiceMileage.toLocaleString()}`, cols[6], y);
-      doc.text(`${t.fuelRate} L/100km`, cols[7], y);
-      doc.text(t.status, cols[8], y);
-      doc.text(t.assignedDriverName || drivers.find(d => d.id === t.driverId)?.name || '-', cols[9], y);
-      y += 4.5;
+    trucks.forEach((t, idx) => {
+      y = maybeBreak(doc, y);
+      y = tableRow(doc, cols, [
+        t.id, t.plateNumber, t.type, t.model, t.capacity,
+        `${t.mileage.toLocaleString()} km`, `${t.nextServiceMileage.toLocaleString()} km`,
+        `${t.fuelRate} L/100km`, t.status,
+        t.assignedDriverName || drivers.find(d => d.id === t.driverId)?.name || '-'
+      ], y, idx);
     });
 
-    footer(doc);
+    docFooter(doc);
     doc.save('Fleet_Details_Report.pdf');
   };
 
   // ── 5. MAINTENANCE REPORT ──
   const downloadMaintenanceReport = () => {
-    const doc = new jsPDF('landscape');
-    let y = header(doc, 'FLEET MAINTENANCE REPORT', 'Workshop schedules, technical overhauls, expenditures, and priority alerts.', 18);
+    const { doc, y: startY } = startReport(
+      'FLEET MAINTENANCE REPORT',
+      'Workshop schedules, technical overhauls, expenditures, and priority alerts.'
+    );
+    let y = startY;
 
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Active: ${maintenance.filter(m => m.status === 'In Progress').length}  |  Scheduled: ${maintenance.filter(m => m.status === 'Scheduled').length}  |  Completed: ${maintenance.filter(m => m.status === 'Completed').length}  |  Total Cost: $${maintenance.reduce((s, m) => s + m.cost, 0).toLocaleString()}`, M, y);
-    y += 7;
-    sep(doc, y);
-    y += 5;
+    const totalCost = maintenance.reduce((s, m) => s + m.cost, 0);
+    y = kpiRow(doc, [
+      { label: 'In Progress', value: String(maintenance.filter(m => m.status === 'In Progress').length) },
+      { label: 'Scheduled', value: String(maintenance.filter(m => m.status === 'Scheduled').length) },
+      { label: 'Completed', value: String(maintenance.filter(m => m.status === 'Completed').length) },
+      { label: 'Total Cost', value: `$${totalCost.toLocaleString()}` },
+    ], y);
 
-    const cols = [M, 30, 55, 120, 155, 185, 215, 240, 265];
-    headerRow(doc, cols, ['WO ID', 'Truck', 'Service Type', 'Technician', 'Scheduled', 'Cost', 'Priority', 'Status', 'Completed'], y);
-    y += 3;
-    sep(doc, y);
-    y += 4;
+    const cols = [22, 50, 78, 138, 172, 200, 228, 252, 272];
+    y = tableHeader(doc, cols, ['WO ID', 'Truck', 'Service Type', 'Technician', 'Scheduled', 'Cost', 'Priority', 'Status', 'Completed'], y);
 
-    doc.setFontSize(6);
-    doc.setFont('helvetica', 'normal');
-    maintenance.forEach(m => {
-      y = checkPage(doc, y);
+    maintenance.forEach((m, idx) => {
+      y = maybeBreak(doc, y);
       const tPlate = m.truckPlate || trucks.find(t => t.id === m.truckId)?.plateNumber || m.truckId;
-      doc.text(m.id, cols[0], y);
-      doc.text(tPlate, cols[1], y);
-      doc.text(m.serviceType, cols[2], y);
-      doc.text(m.technicianName, cols[3], y);
-      doc.text(m.scheduledDate, cols[4], y);
-      doc.text(`$${m.cost.toLocaleString()}`, cols[5], y);
-      doc.text(m.priority, cols[6], y);
-      doc.text(m.status, cols[7], y);
-      doc.text(m.completedDate || '-', cols[8], y);
-      y += 4.5;
+      y = tableRow(doc, cols, [
+        m.id, tPlate, m.serviceType, m.technicianName, m.scheduledDate,
+        `$${m.cost.toLocaleString()}`, m.priority, m.status, m.completedDate || '-'
+      ], y, idx);
     });
 
-    footer(doc);
+    docFooter(doc);
     doc.save('Maintenance_Report.pdf');
   };
 
   // ── 6. FUEL RECONCILIATION REPORT ──
   const downloadFuelReconciliationReport = () => {
-    const doc = new jsPDF('landscape');
-    let y = header(doc, 'FUEL RECONCILIATION REPORT', 'Petroleum dispensing logs, fuel costs, depot stations, and consumption analysis.', 18);
+    const { doc, y: startY } = startReport(
+      'FUEL RECONCILIATION REPORT',
+      'Petroleum dispensing logs, fuel costs, depot stations, and consumption analysis.'
+    );
+    let y = startY;
 
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Total Litres: ${fuelLogs.reduce((s, f) => s + f.litres, 0).toLocaleString()} L  |  Total Cost: $${fuelLogs.reduce((s, f) => s + f.cost, 0).toLocaleString()}  |  Avg: $${(fuelLogs.reduce((s, f) => s + f.cost, 0) / (fuelLogs.reduce((s, f) => s + f.litres, 0) || 1)).toFixed(2)}/L`, M, y);
-    y += 7;
-    sep(doc, y);
-    y += 5;
+    const totalLitres = fuelLogs.reduce((s, f) => s + f.litres, 0);
+    const totalCost = fuelLogs.reduce((s, f) => s + f.cost, 0);
+    const avgPL = totalLitres > 0 ? totalCost / totalLitres : 0;
+    y = kpiRow(doc, [
+      { label: 'Total Transactions', value: String(fuelLogs.length) },
+      { label: 'Total Litres', value: `${totalLitres.toLocaleString()} L` },
+      { label: 'Total Cost', value: `$${totalCost.toLocaleString()}` },
+      { label: 'Avg $/L', value: `$${avgPL.toFixed(2)}` },
+    ], y);
 
-    const cols = [M, 35, 65, 100, 130, 155, 180, 220, 245, 270];
-    headerRow(doc, cols, ['Log ID', 'Truck', 'Driver', 'Litres', 'Cost', 'Fuel', 'Odometer', 'Location', 'Date'], y);
-    y += 3;
-    sep(doc, y);
-    y += 4;
+    const cols = [22, 50, 82, 115, 142, 168, 192, 218, 245, 270];
+    y = tableHeader(doc, cols, ['Log ID', 'Truck', 'Driver', 'Litres', 'Cost', 'Fuel Type', 'Odometer', 'Location', 'Date'], y);
 
-    doc.setFontSize(6);
-    doc.setFont('helvetica', 'normal');
-    fuelLogs.forEach(f => {
-      y = checkPage(doc, y);
+    fuelLogs.forEach((f, idx) => {
+      y = maybeBreak(doc, y);
       const tPlate = f.truckPlate || trucks.find(t => t.id === f.truckId)?.plateNumber || f.truckId;
-      doc.text(f.id, cols[0], y);
-      doc.text(tPlate, cols[1], y);
-      doc.text(f.driverName || f.driverId, cols[2], y);
-      doc.text(`${f.litres}`, cols[3], y);
-      doc.text(`$${f.cost.toLocaleString()}`, cols[4], y);
-      doc.text(f.fuelType, cols[5], y);
-      doc.text(`${f.odometer?.toLocaleString() || '-'}`, cols[6], y);
-      doc.text(f.location, cols[7], y);
-      doc.text(f.date, cols[8], y);
-      y += 4.5;
+      y = tableRow(doc, cols, [
+        f.id, tPlate, f.driverName || f.driverId, `${f.litres.toLocaleString()} L`,
+        `$${f.cost.toLocaleString()}`, f.fuelType,
+        f.odometer ? `${f.odometer.toLocaleString()} km` : '-', f.location, f.date
+      ], y, idx);
     });
 
-    // Consumption by Truck
-    y = checkPage(doc, y + 8);
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Fuel Consumption by Truck', M, y);
-    y += 6;
+    // Fuel Consumption by Truck section
+    y = maybeBreak(doc, y + 4);
+    if (y > ph(doc) - 40) { doc.addPage(); drawFrame(doc); y = 24; }
+    y = sectionTitle(doc, 'Fuel Consumption by Truck', y);
 
     const truckFuel: Record<string, { l: number; c: number }> = {};
     fuelLogs.forEach(f => {
@@ -305,67 +232,53 @@ export const Reports: React.FC = () => {
       truckFuel[f.truckId].c += f.cost;
     });
 
-    const tCols = [M, 70, 140, 210];
-    headerRow(doc, tCols, ['Truck', 'Total Litres', 'Total Cost', 'Avg $/L'], y, 8);
-    y += 4;
-    sep(doc, y);
-    y += 4;
-
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'normal');
-    Object.entries(truckFuel).forEach(([tid, d]) => {
-      y = checkPage(doc, y);
+    const tCols = [22, 100, 175, 240];
+    y = tableHeader(doc, tCols, ['Truck', 'Total Litres', 'Total Cost', 'Avg $/L'], y, 7);
+    Object.entries(truckFuel).forEach(([tid, d], idx) => {
+      y = maybeBreak(doc, y);
       const p = trucks.find(t => t.id === tid)?.plateNumber || tid;
-      doc.text(p, tCols[0], y);
-      doc.text(`${d.l.toLocaleString()} L`, tCols[1], y);
-      doc.text(`$${d.c.toLocaleString()}`, tCols[2], y);
-      doc.text(`$${(d.c / (d.l || 1)).toFixed(2)}`, tCols[3], y);
-      y += 5;
+      y = tableRow(doc, tCols, [
+        p, `${d.l.toLocaleString()} L`, `$${d.c.toLocaleString()}`, `$${(d.c / (d.l || 1)).toFixed(2)}`
+      ], y, idx, 7);
     });
 
-    footer(doc);
+    docFooter(doc);
     doc.save('Fuel_Reconciliation_Report.pdf');
   };
 
   // ── 7. REQUISITIONS REPORT ──
   const downloadRequisitionsReport = () => {
-    const doc = new jsPDF('landscape');
-    let y = header(doc, 'FUEL REQUISITIONS REPORT', 'Authorized fuel dispensing vouchers, approval pipeline, and redemption tracking.', 18);
+    const { doc, y: startY } = startReport(
+      'FUEL REQUISITIONS REPORT',
+      'Authorized fuel dispensing vouchers, approval pipeline, and redemption tracking.'
+    );
+    let y = startY;
 
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Total: ${fuelRequisitions.length}  |  Pending: ${fuelRequisitions.filter(r => r.status === 'Pending').length}  |  Reviewed: ${fuelRequisitions.filter(r => r.status === 'Reviewed').length}  |  Approved: ${fuelRequisitions.filter(r => r.status === 'Approved').length}  |  Redeemed: ${fuelRequisitions.filter(r => r.status === 'Redeemed').length}`, M, y);
-    y += 7;
-    sep(doc, y);
-    y += 5;
+    y = kpiRow(doc, [
+      { label: 'Total', value: String(fuelRequisitions.length) },
+      { label: 'Pending', value: String(fuelRequisitions.filter(r => r.status === 'Pending').length) },
+      { label: 'Approved', value: String(fuelRequisitions.filter(r => r.status === 'Approved').length) },
+      { label: 'Redeemed', value: String(fuelRequisitions.filter(r => r.status === 'Redeemed').length) },
+    ], y);
 
-    const cols = [M, 32, 58, 82, 100, 118, 136, 158, 178, 200, 228, 250, 272];
-    headerRow(doc, cols, ['Req ID', 'Truck', 'Driver', 'Litres', 'Cost', 'Fuel', 'Branch', 'Date', 'Status', 'Reviewed', 'Approved', 'Rejected', 'Reason'], y, 6);
-    y += 3;
-    sep(doc, y);
-    y += 4;
+    const cols = [22, 48, 72, 94, 110, 126, 142, 163, 182, 202, 222, 240, 256];
+    y = tableHeader(doc, cols, [
+      'Req ID', 'Truck', 'Driver', 'Litres', 'Cost', 'Fuel', 'Branch', 'Date',
+      'Status', 'Reviewer', 'Approver', 'Rejector', 'Reason'
+    ], y, 5.5);
 
-    doc.setFontSize(6);
-    doc.setFont('helvetica', 'normal');
-    fuelRequisitions.forEach(r => {
-      y = checkPage(doc, y);
-      doc.text(r.id, cols[0], y);
-      doc.text((r.truckPlate || r.truckId), cols[1], y);
-      doc.text((r.driverName || r.driverId), cols[2], y);
-      doc.text(`${r.litresRequested}`, cols[3], y);
-      doc.text(`$${r.estimatedCost}`, cols[4], y);
-      doc.text(r.fuelType || 'Diesel', cols[5], y);
-      doc.text((r.branchName || r.branchId || '-'), cols[6], y);
-      doc.text(r.fuelDate || r.dateRequested, cols[7], y);
-      doc.text(r.status, cols[8], y);
-      doc.text(r.reviewedBy || '-', cols[9], y);
-      doc.text(r.approvedBy || '-', cols[10], y);
-      doc.text(r.rejectedBy || '-', cols[11], y);
-      doc.text((r.rejectionReason || '-'), cols[12], y);
-      y += 4;
+    fuelRequisitions.forEach((r, idx) => {
+      y = maybeBreak(doc, y);
+      y = tableRow(doc, cols, [
+        r.id, r.truckPlate || r.truckId, r.driverName || r.driverId,
+        `${r.litresRequested} L`, `$${r.estimatedCost}`, r.fuelType || 'Diesel',
+        r.branchName || r.branchId || '-', r.fuelDate || r.dateRequested,
+        r.status, r.reviewedBy || '-', r.approvedBy || '-',
+        r.rejectedBy || '-', r.rejectionReason || '-'
+      ], y, idx, 5);
     });
 
-    footer(doc);
+    docFooter(doc);
     doc.save('Requisitions_Report.pdf');
   };
 

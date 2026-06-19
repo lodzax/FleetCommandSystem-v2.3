@@ -2,9 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useFleet } from '../context/FleetContext';
 import { Layout } from '../components/NavigationSidebar';
 import { jsPDF } from 'jspdf';
-import { 
-  Plus, X, Eye, ThumbsUp, ThumbsDown, Download, Fuel
-} from 'lucide-react';
+import { Plus, X, Eye, ThumbsUp, ThumbsDown, Download, Fuel } from 'lucide-react';
+import { drawFrame, docFooter, pw, ph } from '../utils/pdfHelpers';
 import { FuelRequisition } from '../types';
 import { PaginatedTable } from '../components/PaginatedTable';
 import { Barcode } from '../components/Barcode';
@@ -63,6 +62,19 @@ export const RequisitionsPipeline: React.FC = () => {
   const [qrCustomStation, setQrCustomStation] = useState('');
   const [insufficientMsg, setInsufficientMsg] = useState('');
 
+  const [customPlates, setCustomPlates] = useState<string[]>(() => {
+    const saved = localStorage.getItem('fc_custom_plates');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [customDrivers, setCustomDrivers] = useState<{ id: string; name: string }[]>(() => {
+    const saved = localStorage.getItem('fc_custom_drivers');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [customBranches, setCustomBranches] = useState<string[]>(() => {
+    const saved = localStorage.getItem('fc_custom_branches');
+    return saved ? JSON.parse(saved) : [];
+  });
+
   const checkFuelBalance = (litres: number, type: 'Diesel' | 'Petrol'): boolean => {
     const balance = type === 'Diesel' ? prepaidFuelBalance.diesel : prepaidFuelBalance.petrol;
     if (balance < litres) {
@@ -102,13 +114,18 @@ export const RequisitionsPipeline: React.FC = () => {
     const selectedTruck = trucks.find(t => t.plateNumber === finalPlate);
     const selectedDriver = qrDriverId === 'custom'
       ? null
-      : drivers.find(d => d.id === qrDriverId);
+      : qrDriverId.startsWith('custom-')
+        ? customDrivers.find(d => d.id === qrDriverId) || null
+        : drivers.find(d => d.id === qrDriverId);
+    const driverName = qrDriverId === 'custom'
+      ? qrCustomDriver.trim()
+      : selectedDriver?.name || activeUser?.name || '';
     const rate = qrFuelType === 'Petrol' ? fuelPrices.petrol : fuelPrices.diesel;
     addFuelRequisition({
       truckId: selectedTruck?.id || '',
       truckPlate: finalPlate,
       driverId: qrDriverId,
-      driverName: selectedDriver?.name || qrCustomDriver.trim() || activeUser?.name || '',
+      driverName: driverName,
       litresRequested: qrLitres,
       estimatedCost: Math.round(qrLitres * rate),
       purpose: qrPurpose || 'Fuel request from dashboard',
@@ -121,6 +138,25 @@ export const RequisitionsPipeline: React.FC = () => {
       fillingStation: finalStation
     });
     setShowQuickReq(false);
+    const customPlateVal = qrPlate === 'custom' ? qrCustomPlate.trim() : '';
+    const customDriverVal = qrDriverId === 'custom' ? qrCustomDriver.trim() : '';
+    const customBranchVal = qrBranch === 'custom' ? qrCustomBranch.trim() : '';
+    if (customPlateVal && !customPlates.includes(customPlateVal)) {
+      const updated = [...customPlates, customPlateVal];
+      setCustomPlates(updated);
+      localStorage.setItem('fc_custom_plates', JSON.stringify(updated));
+    }
+    if (customDriverVal && !customDrivers.some(d => d.name === customDriverVal)) {
+      const entry = { id: `custom-${Date.now()}`, name: customDriverVal };
+      const updated = [...customDrivers, entry];
+      setCustomDrivers(updated);
+      localStorage.setItem('fc_custom_drivers', JSON.stringify(updated));
+    }
+    if (customBranchVal && !customBranches.includes(customBranchVal)) {
+      const updated = [...customBranches, customBranchVal];
+      setCustomBranches(updated);
+      localStorage.setItem('fc_custom_branches', JSON.stringify(updated));
+    }
     setQrLitres(200);
     setQrFuelType('Diesel');
     setQrBranch('');
@@ -200,9 +236,14 @@ export const RequisitionsPipeline: React.FC = () => {
   const canReview = isTreasurer;
   const canApprove = isAccounts || isManager;
 
-  const filteredRequisitions = isDriver 
+  const filteredRequisitions = (isDriver 
     ? fuelRequisitions.filter(r => r.submittedById === activeUser?.id || r.driverName === activeUser?.name)
-    : fuelRequisitions;
+    : fuelRequisitions
+  ).sort((a, b) => {
+    const dateA = a.fuelDate || a.dateRequested || '';
+    const dateB = b.fuelDate || b.dateRequested || '';
+    return dateB.localeCompare(dateA);
+  });
 
   const openRejectModal = (id: string) => {
     setRejectTargetId(id);
@@ -221,90 +262,168 @@ export const RequisitionsPipeline: React.FC = () => {
 
   const downloadPdf = (r: FuelRequisition) => {
     const doc = new jsPDF();
-    const pageW = doc.internal.pageSize.getWidth();
-    let y = 15;
+    const w = pw(doc);
+    const h = ph(doc);
+    const M2 = 14;
 
+    drawFrame(doc);
+
+    // ── Header block ──
+    let y = M2 + 10;
     if (logoBase64Ref.current) {
-      doc.addImage(logoBase64Ref.current, 'PNG', 14, y, 40, 16);
-      y += 20;
+      doc.addImage(logoBase64Ref.current, 'PNG', M2 + 8, y - 4, 36, 14);
+      y += 14;
     }
+
+    doc.setFillColor(25, 55, 170);
+    doc.rect(M2 + 5, y, w - 2 * M2 - 10, 1.8, 'F');
+    y += 4;
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(16);
-    doc.text('FUEL REQUISITION VOUCHER', pageW / 2, y, { align: 'center' });
-    y += 8;
+    doc.setTextColor(25, 55, 170);
+    doc.text('FLEETCOMMAND OPERATIONS', w / 2, y, { align: 'center' });
+    y += 6.5;
 
-    doc.setFontSize(10);
+    doc.setFontSize(12);
+    doc.setTextColor(30, 35, 50);
+    doc.text('FUEL REQUISITION VOUCHER', w / 2, y, { align: 'center' });
+    y += 5;
+
     doc.setFont('helvetica', 'normal');
-    doc.text('FleetCommand Operations Control Center', pageW / 2, y, { align: 'center' });
-    y += 6;
-    y += 10;
+    doc.setFontSize(7.5);
+    doc.setTextColor(120, 125, 140);
+    doc.text('FleetCommand Operations Control Center — Fuel Dispensing Authorization', w / 2, y, { align: 'center' });
+    y += 3;
 
-    doc.setDrawColor(200);
-    doc.line(14, y, pageW - 14, y);
-    y += 8;
+    doc.setFontSize(6.5);
+    doc.text(`Generated: ${new Date().toLocaleString()}  |  By: ${activeUser?.name || 'System'}  |  FleetCommand v2.3`, w / 2, y, { align: 'center' });
+    y += 3;
 
+    // ── Requisition ID badge ──
+    doc.setFillColor(25, 55, 170);
+    const ridText = `REQUISITION: ${r.id}`;
+    const ridW = doc.getTextWidth(ridText) + 8;
+    doc.rect(w / 2 - ridW / 2, y + 1, ridW, 5.5, 'F');
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(14);
-    doc.text(`Requisition: ${r.id}`, 14, y);
-    y += 8;
+    doc.setFontSize(8);
+    doc.setTextColor(255, 255, 255);
+    doc.text(ridText, w / 2, y + 5.2, { align: 'center' });
+    y += 9;
 
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(10);
+    // ── Divider ──
+    doc.setDrawColor(200, 200, 208);
+    doc.setLineWidth(0.3);
+    doc.line(M2 + 8, y, w - M2 - 8, y);
+    y += 5;
 
-    const addRow = (label: string, value: string) => {
+    // ── Info section with alternating subtle backgrounds ──
+    const infoRows = [
+      ['Status', r.status.toUpperCase()],
+      ['Truck Asset', r.truckPlate || r.truckId],
+      ['Driver / Pilot', r.driverName || r.driverId],
+      ['Fuel Type', r.fuelType || 'Diesel'],
+      ['Litres Requested', `${r.litresRequested} L`],
+      ['Estimated Cost', `$${r.estimatedCost.toLocaleString()}`],
+      ['Fuel Date', r.fuelDate || r.dateRequested],
+      ['Branch / Depot', r.branchName || r.branchId || '-'],
+      ['Purpose', r.purpose],
+    ];
+
+    const labelX = M2 + 10;
+    const valX = 68;
+    const rowH = 5.5;
+
+    infoRows.forEach(([label, val], idx) => {
+      if (idx % 2 === 1) {
+        doc.setFillColor(247, 247, 251);
+        doc.rect(M2 + 8, y - 0.5, w - 2 * M2 - 16, rowH, 'F');
+      }
       doc.setFont('helvetica', 'bold');
-      doc.text(`${label}:`, 14, y);
+      doc.setFontSize(8.5);
+      doc.setTextColor(30, 35, 50);
+      doc.text(`${label}:`, labelX, y + 1.5);
+
       doc.setFont('helvetica', 'normal');
-      doc.text(value, 65, y);
-      y += 6;
-    };
+      doc.setFontSize(8.5);
+      doc.setTextColor(55, 58, 68);
+      doc.text(val, valX, y + 1.5);
+      y += rowH;
+    });
 
-    addRow('Status', r.status.toUpperCase());
-    addRow('Truck Asset', r.truckPlate || r.truckId);
-    addRow('Driver / Pilot', r.driverName || r.driverId);
-    addRow('Fuel Type', r.fuelType || 'Diesel');
-    addRow('Litres Requested', `${r.litresRequested} L`);
-    addRow('Estimated Cost', `$${r.estimatedCost.toLocaleString()}`);
-    addRow('Fuel Date', r.fuelDate || r.dateRequested);
-    addRow('Branch / Depot', r.branchName || r.branchId || '-');
-    addRow('Purpose', r.purpose);
-    y += 4;
+    y += 3;
 
-    doc.setDrawColor(200);
-    doc.line(14, y, pageW - 14, y);
-    y += 6;
+    // ── Approval section ──
+    doc.setDrawColor(200, 200, 208);
+    doc.setLineWidth(0.3);
+    doc.line(M2 + 8, y, w - M2 - 8, y);
+    y += 5;
 
+    doc.setFillColor(25, 55, 170);
+    doc.rect(M2 + 8, y, 55, 4.5, 'F');
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11);
-    doc.text('APPROVAL VERIFICATION', 14, y);
+    doc.setFontSize(8);
+    doc.setTextColor(255, 255, 255);
+    doc.text('APPROVAL VERIFICATION', M2 + 10, y + 3.2);
     y += 7;
 
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(10);
+    // Approval detail rows
+    const addApprovalRow = (label: string, value: string, i: number) => {
+      if (i % 2 === 1) {
+        doc.setFillColor(247, 247, 251);
+        doc.rect(M2 + 8, y - 0.5, w - 2 * M2 - 16, rowH, 'F');
+      }
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(30, 35, 50);
+      doc.text(`${label}:`, labelX, y + 1.5);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8.5);
+      doc.setTextColor(55, 58, 68);
+      doc.text(value, valX, y + 1.5);
+      y += rowH;
+    };
+    addApprovalRow('Approved By', r.approvedBy || '-', 0);
+    addApprovalRow('Approved Date', r.approvedDate || '-', 1);
+    if (r.reviewedBy) addApprovalRow('Reviewed By', r.reviewedBy, 2);
+    if (r.reviewedDate) addApprovalRow('Reviewed Date', r.reviewedDate, 3);
 
-    addRow('Approved By', r.approvedBy || '-');
-    addRow('Approved Date', r.approvedDate || '-');
+    y += 2;
 
+    // ── QR Code & Barcode section ──
     if (r.qrCodeData || r.redeemToken) {
-      const rowY = y;
-      let rowH = 6;
+      doc.setDrawColor(200, 200, 208);
+      doc.setLineWidth(0.3);
+      doc.line(M2 + 8, y, w - M2 - 8, y);
+      y += 4;
+
+      doc.setFillColor(25, 55, 170);
+      doc.rect(M2 + 8, y, 50, 4, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor(255, 255, 255);
+      doc.text('VERIFICATION CODES', M2 + 10, y + 2.8);
+      y += 7;
+
+      const qrSize = 28;
+      const barcodeH = 18;
 
       if (r.qrCodeData) {
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(10);
-        doc.text('Verification QR:', 14, rowY);
+        doc.setFontSize(7);
+        doc.setTextColor(30, 35, 50);
+        doc.text('QR Code:', M2 + 10, y + 2);
         try {
-          doc.addImage(r.qrCodeData, 'PNG', 14, rowY + 2, 30, 30);
-          rowH = 34;
+          doc.addImage(r.qrCodeData, 'PNG', M2 + 10, y + 3, qrSize, qrSize);
         } catch {}
       }
 
       if (r.redeemToken) {
-        const barcodeW = 56;
+        const barcodeX = w - M2 - 10 - 55;
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(10);
-        doc.text('Redeem Barcode:', pageW - 14, rowY, { align: 'right' });
+        doc.setFontSize(7);
+        doc.setTextColor(30, 35, 50);
+        doc.text('Barcode:', barcodeX, y + 2);
         const canvas = document.createElement('canvas');
         JsBarcode(canvas, r.redeemToken, {
           format: 'CODE128',
@@ -314,24 +433,37 @@ export const RequisitionsPipeline: React.FC = () => {
           margin: 4,
         });
         const barcodeDataUrl = canvas.toDataURL('image/png');
-        doc.addImage(barcodeDataUrl, 'PNG', pageW - 14 - barcodeW, rowY + 2, barcodeW, 18);
-        rowH = Math.max(rowH, 22);
+        doc.addImage(barcodeDataUrl, 'PNG', barcodeX, y + 3, 55, barcodeH);
       }
 
-      y = rowY + rowH + 4;
-    } else {
-      addRow('Redeem Token', '-');
-      y += 4;
+      y += Math.max(qrSize, barcodeH) + 8;
     }
 
-    doc.setDrawColor(200);
-    doc.line(14, y, pageW - 14, y);
+    // ── Signature lines ──
+    y = Math.max(y, h - 50);
+    if (y < h - 50) y = h - 50;
+
+    doc.setDrawColor(200, 200, 208);
+    doc.setLineWidth(0.3);
+    doc.line(M2 + 8, y, w - M2 - 8, y);
     y += 8;
 
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'italic');
-    doc.text(`Generated: ${new Date().toLocaleString()} | FleetCommand System v2.3`, 14, y);
-    doc.text('This document serves as an official fuel dispensing authorization.', 14, y + 4);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(120, 125, 140);
+    doc.line(M2 + 10, y, M2 + 70, y);
+    doc.text('Authorized Signature', M2 + 10, y + 3.5);
+    doc.line(w - M2 - 70, y, w - M2 - 10, y);
+    doc.text('Date', w - M2 - 70, y + 3.5);
+    y += 8;
+
+    doc.line(M2 + 10, y, M2 + 70, y);
+    doc.text('Gas Station Attendant', M2 + 10, y + 3.5);
+    doc.line(w - M2 - 70, y, w - M2 - 10, y);
+    doc.text('Date', w - M2 - 70, y + 3.5);
+
+    // ── Footer ──
+    docFooter(doc);
 
     doc.save(`Fuel_Requisition_${r.id}.pdf`);
   };
@@ -461,6 +593,9 @@ export const RequisitionsPipeline: React.FC = () => {
                     {drivers.map(d => (
                       <option key={d.id} value={d.id}>{d.name}</option>
                     ))}
+                    {customDrivers.map(d => (
+                      <option key={d.id} value={d.id}>✦ {d.name}</option>
+                    ))}
                     <option value="custom">✦ Register Temporary Custom Driver...</option>
                   </select>
                   {qrDriverId === 'custom' && (
@@ -477,6 +612,9 @@ export const RequisitionsPipeline: React.FC = () => {
                     {trucks.map(t => (
                       <option key={t.id} value={t.plateNumber}>{t.plateNumber} ({t.model || t.type})</option>
                     ))}
+                    {customPlates.map(p => (
+                      <option key={`cp-${p}`} value={p}>✦ {p}</option>
+                    ))}
                     <option value="custom">✦ Custom Plate...</option>
                   </select>
                   {qrPlate === 'custom' && (
@@ -492,6 +630,9 @@ export const RequisitionsPipeline: React.FC = () => {
                     <option value="">-- Select Branch --</option>
                     {QUICK_BRANCHES.map(b => (
                       <option key={b} value={b}>{b}</option>
+                    ))}
+                    {customBranches.map(b => (
+                      <option key={`cb-${b}`} value={b}>✦ {b}</option>
                     ))}
                     <option value="custom">✦ Other Branch...</option>
                   </select>
@@ -601,13 +742,15 @@ export const RequisitionsPipeline: React.FC = () => {
         )}
 
         {/* REQUISITIONS TABLE */}
-        <div className="bg-[#101424] border border-zinc-800 p-6 rounded-xl overflow-hidden">
+        <div className="bg-[#101424] border border-zinc-800 p-6 rounded-xl">
           <PaginatedTable
             data={filteredRequisitions}
             searchFields={['id', 'truckPlate', 'driverName', 'purpose', 'branchName']}
             pageSize={15}
             keyExtractor={r => r.id}
             emptyMessage="No requisitions match the current filters."
+            defaultSortKey="fuelDate"
+            defaultSortDir="desc"
             columns={[
               { header: 'Req Token', accessor: 'id', sortable: true, className: 'font-mono font-bold text-orange-400', headerClassName: 'pl-4' },
               { header: 'Asset Plate', accessor: 'truckPlate', sortable: true, className: 'font-mono text-white text-xs uppercase font-bold', render: r => r.truckPlate || r.truckId },

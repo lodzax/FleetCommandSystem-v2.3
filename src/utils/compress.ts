@@ -2,7 +2,7 @@
  * Utility to read an image file from the local drive,
  * resize it using an HTML5 Canvas, and compress to JPEG format.
  * This yields a very small Base64 string (~10-20KB) which is
- * perfect for storing in the simulated localStorage database.
+ * perfect for storing in localStorage.
  */
 export const compressAndGetBase64 = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {

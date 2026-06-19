@@ -1,6 +1,6 @@
 -- FleetCommand v2.3 — Migration: Add submittedBy / submittedById to fuel_requisitions
 -- Run this on the production database via cPanel » phpMyAdmin or SSH:
---   mysql -u npivfupq_fleet_admin -p'M1n3@zy2026' npivfupq_fleet < server/migration_submitted_by.sql
+--   mysql -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" < server/migration_submitted_by.sql
 -- Safe to re-run — skips if columns already exist.
 
 SET @db = 'npivfupq_fleet';

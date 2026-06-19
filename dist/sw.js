@@ -1,4 +1,4 @@
-const CACHE = 'fleet-scanner-v1';
+const CACHE = 'fleet-scanner-v8';
 const ASSETS = [
   '/',
   '/index.html',
@@ -14,6 +14,9 @@ self.addEventListener('install', (e) => {
 });
 
 self.addEventListener('fetch', (e) => {
+  if (e.request.method !== 'GET' || e.request.url.includes('/api/')) {
+    return;
+  }
   e.respondWith(
     caches.match(e.request).then((cached) => {
       const fetchPromise = fetch(e.request).then((response) => {
@@ -22,7 +25,7 @@ self.addEventListener('fetch', (e) => {
           caches.open(CACHE).then((cache) => cache.put(e.request, clone));
         }
         return response;
-      }).catch(() => cached);
+      }).catch(() => cached || new Response('Offline', { status: 503 }));
       return cached || fetchPromise;
     })
   );
