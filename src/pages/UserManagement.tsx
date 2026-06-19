@@ -5,6 +5,7 @@ import { UserRole } from '../types';
 import { 
   Users, Shield, X, Plus, CheckCircle, Ban, Clock, Trash2
 } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 export const UserManagement: React.FC = () => {
   const { activeUser, users, updateUserRole, revokeUser, addUser, approveUser, deleteUser } = useFleet();
@@ -13,6 +14,9 @@ export const UserManagement: React.FC = () => {
   const [newUserName, setNewUserName] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserRole, setNewUserRole] = useState<UserRole>('Driver');
+  const [newUserPassword, setNewUserPassword] = useState('');
+  const [newUserConfirmPassword, setNewUserConfirmPassword] = useState('');
+  const [newUserError, setNewUserError] = useState('');
 
   // Per-pending-user role assignment state
   const [pendingRoles, setPendingRoles] = useState<Record<string, UserRole>>({});
@@ -24,17 +28,31 @@ export const UserManagement: React.FC = () => {
 
   const handleAddUser = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newUserName || !newUserEmail) return;
+    setNewUserError('');
+    if (!newUserName || !newUserEmail || !newUserPassword) return;
+    if (newUserPassword !== newUserConfirmPassword) {
+      setNewUserError('Passwords do not match');
+      return;
+    }
+    if (newUserPassword.length < 6) {
+      setNewUserError('Password must be at least 6 characters');
+      return;
+    }
     addUser({
       name: newUserName,
       email: newUserEmail,
       role: newUserRole,
-      status: 'Verified'
+      status: 'Verified',
+      password: newUserPassword,
+      memberSince: new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })
     });
     setNewUserName('');
     setNewUserEmail('');
     setNewUserRole('Driver');
+    setNewUserPassword('');
+    setNewUserConfirmPassword('');
     setShowAddModal(false);
+    toast.success('User registered');
   };
 
   const [rejectTarget, setRejectTarget] = useState<{ id: string; name: string } | null>(null);
@@ -42,12 +60,14 @@ export const UserManagement: React.FC = () => {
   const handleApprove = (userId: string, role: UserRole) => {
     updateUserRole(userId, role);
     approveUser(userId);
+    toast.success('User verified & activated');
   };
 
   const confirmReject = () => {
     if (!rejectTarget) return;
     deleteUser(rejectTarget.id);
     setRejectTarget(null);
+    toast.success('User deleted');
   };
 
   return (
@@ -128,12 +148,12 @@ export const UserManagement: React.FC = () => {
                   <Trash2 size={14} className="text-red-400" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-red-400 font-mono uppercase">Reject Registration</h3>
+                  <h3 className="text-sm font-bold text-red-400 font-mono uppercase">Delete User</h3>
                   <p className="text-zinc-500 mt-0.5">This action permanently deletes the user</p>
                 </div>
               </div>
               <p className="text-zinc-300 font-mono text-[11px] mb-2">
-                Are you sure you want to reject and delete <span className="text-white font-bold">{rejectTarget.name}</span>'s registration?
+                Are you sure you want to delete <span className="text-white font-bold">{rejectTarget.name}</span>'s account?
               </p>
               <p className="text-zinc-500 font-mono text-[10px] mb-6">
                 This will remove their account from the system. This action cannot be undone.
@@ -150,7 +170,7 @@ export const UserManagement: React.FC = () => {
                   className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white font-semibold rounded text-xs shadow-lg flex items-center gap-1.5"
                 >
                   <Trash2 size={12} />
-                  Delete Registration
+                  Delete User
                 </button>
               </div>
             </div>
@@ -198,7 +218,7 @@ export const UserManagement: React.FC = () => {
                 <div className="flex flex-col gap-1.5 items-end">
                   <select
                     value={u.role}
-                    onChange={(e) => updateUserRole(u.id, e.target.value as UserRole)}
+                    onChange={(e) => { updateUserRole(u.id, e.target.value as UserRole); toast.success('Role updated'); }}
                     disabled={activeUser?.id === u.id}
                     className="bg-zinc-950 border border-zinc-850 p-1 rounded text-[10.5px] text-zinc-300 cursor-pointer text-right min-w-[110px]"
                   >
@@ -213,14 +233,30 @@ export const UserManagement: React.FC = () => {
 
                   {u.status === 'Verified' ? (
                     <button
-                      onClick={() => revokeUser(u.id)}
+                      onClick={() => { revokeUser(u.id); toast.success('User suspended'); }}
                       disabled={activeUser?.id === u.id}
                       className="text-[9.5px] font-mono text-red-500 border border-red-500/15 bg-red-500/5 hover:bg-red-500/10 disabled:opacity-30 disabled:hover:bg-transparent hover:border-red-500 p-1 rounded font-bold px-2 cursor-pointer transition-all"
                     >
                       Suspend
                     </button>
                   ) : (
-                    <p className="text-[10px] text-red-500 italic font-medium font-mono uppercase">Suspended</p>
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-[10px] text-red-500 italic font-medium font-mono uppercase">Suspended</p>
+                      <button
+                        onClick={() => { approveUser(u.id); toast.success('User restored'); }}
+                        className="text-[9.5px] font-mono text-emerald-400 border border-emerald-500/15 bg-emerald-500/5 hover:bg-emerald-500/10 hover:border-emerald-500 p-1 rounded font-bold px-2 cursor-pointer transition-all flex items-center gap-1"
+                        title="Restore suspended user"
+                      >
+                        <CheckCircle size={10} /> Restore
+                      </button>
+                      <button
+                        onClick={() => setRejectTarget({ id: u.id, name: u.name })}
+                        className="text-[9.5px] font-mono text-red-400 border border-red-500/15 bg-red-500/5 hover:bg-red-500/10 hover:border-red-500 p-1 rounded font-bold px-2 cursor-pointer transition-all flex items-center gap-1"
+                        title="Delete suspended user"
+                      >
+                        <Trash2 size={10} /> Delete
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -247,12 +283,12 @@ export const UserManagement: React.FC = () => {
             <form onSubmit={handleAddUser} className="space-y-4">
               <div>
                 <label className="block text-[11px] font-bold text-zinc-500 uppercase tracking-wider font-mono mb-1">Full Name</label>
-                <input type="text" required placeholder="e.g., John Mandaza" value={newUserName} onChange={(e) => setNewUserName(e.target.value)}
+                <input type="text" required placeholder="Full name" value={newUserName} onChange={(e) => setNewUserName(e.target.value)}
                   className="w-full bg-[#0c0f1d] border border-zinc-850 p-2.5 rounded text-zinc-200 outline-none focus:border-orange-500" />
               </div>
               <div>
                 <label className="block text-[11px] font-bold text-zinc-500 uppercase tracking-wider font-mono mb-1">Email Address</label>
-                <input type="email" required placeholder="e.g., john.mandaza@fleetcommand.co.zw" value={newUserEmail} onChange={(e) => setNewUserEmail(e.target.value)}
+                <input type="email" required placeholder="user@example.com" value={newUserEmail} onChange={(e) => setNewUserEmail(e.target.value)}
                   className="w-full bg-[#0c0f1d] border border-zinc-850 p-2.5 rounded text-zinc-200 outline-none focus:border-orange-500 font-mono" />
               </div>
               <div>
@@ -268,6 +304,17 @@ export const UserManagement: React.FC = () => {
                   <option value="Attendant">Attendant</option>
                 </select>
               </div>
+              <div>
+                <label className="block text-[11px] font-bold text-zinc-500 uppercase tracking-wider font-mono mb-1">Password</label>
+                <input type="password" required placeholder="Min 6 characters" value={newUserPassword} onChange={(e) => setNewUserPassword(e.target.value)}
+                  className="w-full bg-[#0c0f1d] border border-zinc-850 p-2.5 rounded text-zinc-200 outline-none focus:border-orange-500 font-mono" />
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-zinc-500 uppercase tracking-wider font-mono mb-1">Confirm Password</label>
+                <input type="password" required placeholder="Re-enter password" value={newUserConfirmPassword} onChange={(e) => setNewUserConfirmPassword(e.target.value)}
+                  className="w-full bg-[#0c0f1d] border border-zinc-850 p-2.5 rounded text-zinc-200 outline-none focus:border-orange-500 font-mono" />
+              </div>
+              {newUserError && <p className="text-red-400 text-[10px] font-mono">{newUserError}</p>}
               <div className="pt-4 border-t border-zinc-800 flex justify-end gap-3 font-mono">
                 <button type="button" onClick={() => setShowAddModal(false)}
                   className="px-4 py-2 hover:bg-zinc-850 border border-zinc-800 hover:text-white rounded font-semibold text-xs">Cancel</button>

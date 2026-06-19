@@ -6,11 +6,14 @@ import {
   Plus, X, Eye, ThumbsUp, ThumbsDown, Download, Fuel
 } from 'lucide-react';
 import { FuelRequisition } from '../types';
+import { PaginatedTable } from '../components/PaginatedTable';
 import { Barcode } from '../components/Barcode';
+import JsBarcode from 'jsbarcode';
 import logoImg from '../../assets/logo.png';
+import toast from 'react-hot-toast';
 
 export const RequisitionsPipeline: React.FC = () => {
-  const { fuelRequisitions, trucks, drivers, branches, activeUser, addFuelRequisition, updateRequisitionStatus, editRequisitionQuantity, reviewRequisition, verifyRequisition, approveRequisition, rejectRequisition, prepaidFuelBalance } = useFleet();
+  const { fuelRequisitions, trucks, drivers, branches, activeUser, addFuelRequisition, updateRequisitionStatus, editRequisitionQuantity, reviewRequisition, approveRequisition, rejectRequisition, prepaidFuelBalance, fuelPrices } = useFleet();
 
   const [showReqModal, setShowReqModal] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
@@ -52,6 +55,12 @@ export const RequisitionsPipeline: React.FC = () => {
   const [qrDestination, setQrDestination] = useState('');
   const [qrOdometer, setQrOdometer] = useState(0);
   const [qrPurpose, setQrPurpose] = useState('');
+  const [qrDriverId, setQrDriverId] = useState('');
+  const [qrCustomDriver, setQrCustomDriver] = useState('');
+  const [qrCustomPlate, setQrCustomPlate] = useState('');
+  const [qrCustomBranch, setQrCustomBranch] = useState('');
+  const [qrFillingStation, setQrFillingStation] = useState('Glow Petroleum (Plumtree Rd)');
+  const [qrCustomStation, setQrCustomStation] = useState('');
   const [insufficientMsg, setInsufficientMsg] = useState('');
 
   const checkFuelBalance = (litres: number, type: 'Diesel' | 'Petrol'): boolean => {
@@ -71,30 +80,45 @@ export const RequisitionsPipeline: React.FC = () => {
     : null;
 
   const myRequisitions = fuelRequisitions.filter(r => r.submittedById === activeUser?.id || r.driverName === activeUser?.name);
-  const pendingReq = myRequisitions.filter(r => r.status === 'Pending' || r.status === 'Reviewed' || r.status === 'Verified').length;
+  const pendingReq = myRequisitions.filter(r => r.status === 'Pending' || r.status === 'Reviewed').length;
   const approvedReq = myRequisitions.filter(r => r.status === 'Approved').length;
   const myTruck = activeDriverRecord ? trucks.find(t => t.id === activeDriverRecord.assignedTruckId) : null;
 
+  // Default quick request driver to logged-in user's driver record
+  useEffect(() => {
+    if (!qrDriverId && activeDriverRecord) {
+      setQrDriverId(activeDriverRecord.id);
+    }
+  }, [activeDriverRecord]);
+
   const handleQuickReq = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!qrBranch || !qrPlate) return;
+    const finalPlate = qrPlate === 'custom' ? qrCustomPlate.trim() : qrPlate;
+    const finalBranch = qrBranch === 'custom' ? qrCustomBranch.trim() : qrBranch;
+    const finalStation = qrFillingStation === 'custom' ? qrCustomStation.trim() : qrFillingStation;
+    if (!finalPlate || !finalBranch || !qrDriverId) return;
     if (!checkFuelBalance(qrLitres, qrFuelType)) return;
-    const selectedTruck = trucks.find(t => t.plateNumber === qrPlate);
-    const rate = qrFuelType === 'Petrol' ? 2.16 : 2.18;
+    if (qrDriverId === 'custom' && !qrCustomDriver.trim()) return;
+    const selectedTruck = trucks.find(t => t.plateNumber === finalPlate);
+    const selectedDriver = qrDriverId === 'custom'
+      ? null
+      : drivers.find(d => d.id === qrDriverId);
+    const rate = qrFuelType === 'Petrol' ? fuelPrices.petrol : fuelPrices.diesel;
     addFuelRequisition({
       truckId: selectedTruck?.id || '',
-      truckPlate: qrPlate,
-      driverId: activeDriverRecord?.id || activeUser!.id,
-      driverName: activeDriverRecord?.name || activeUser?.name,
+      truckPlate: finalPlate,
+      driverId: qrDriverId,
+      driverName: selectedDriver?.name || qrCustomDriver.trim() || activeUser?.name || '',
       litresRequested: qrLitres,
       estimatedCost: Math.round(qrLitres * rate),
       purpose: qrPurpose || 'Fuel request from dashboard',
       fuelDate: new Date().toISOString().split('T')[0],
       fuelType: qrFuelType,
-      branchId: qrBranch,
-      branchName: qrBranch,
+      branchId: finalBranch,
+      branchName: finalBranch,
       destination: qrDestination,
-      odometerReading: qrOdometer
+      odometerReading: qrOdometer,
+      fillingStation: finalStation
     });
     setShowQuickReq(false);
     setQrLitres(200);
@@ -104,6 +128,13 @@ export const RequisitionsPipeline: React.FC = () => {
     setQrOdometer(0);
     setQrPurpose('');
     setQrPlate('');
+    setQrDriverId(activeDriverRecord?.id || '');
+    setQrCustomDriver('');
+    setQrFillingStation('Glow Petroleum (Plumtree Rd)');
+    setQrCustomStation('');
+    setQrCustomPlate('');
+    setQrCustomBranch('');
+    toast.success('Fuel request submitted');
   };
 
   useEffect(() => {
@@ -158,17 +189,16 @@ export const RequisitionsPipeline: React.FC = () => {
     });
 
     setShowReqModal(false);
+    toast.success('Requisition submitted');
   };
 
   const isAdmin = activeUser?.role === 'Administrator';
-  const isDirector = activeUser?.role === 'Director';
   const isManager = activeUser?.role === 'Manager';
   const isAccounts = activeUser?.role === 'Accounts';
   const isTreasurer = activeUser?.role === 'Treasurer';
   const isDriver = activeUser?.role === 'Driver';
   const canReview = isTreasurer;
-  const canVerify = isAccounts || isManager;
-  const canApprove = isDirector || isAdmin;
+  const canApprove = isAccounts || isManager;
 
   const filteredRequisitions = isDriver 
     ? fuelRequisitions.filter(r => r.submittedById === activeUser?.id || r.driverName === activeUser?.name)
@@ -186,6 +216,7 @@ export const RequisitionsPipeline: React.FC = () => {
     setShowRejectModal(false);
     setRejectTargetId('');
     setRejectReason('');
+    toast.success('Requisition rejected');
   };
 
   const downloadPdf = (r: FuelRequisition) => {
@@ -254,18 +285,43 @@ export const RequisitionsPipeline: React.FC = () => {
 
     addRow('Approved By', r.approvedBy || '-');
     addRow('Approved Date', r.approvedDate || '-');
-    addRow('Redeem Token', r.redeemToken || '-');
-    y += 4;
 
-    if (r.qrCodeData) {
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(10);
-      doc.text('Digital Verification QR:', 14, y);
-      y += 6;
-      try {
-        doc.addImage(r.qrCodeData, 'PNG', 14, y, 40, 40);
-        y += 44;
-      } catch { y += 4; }
+    if (r.qrCodeData || r.redeemToken) {
+      const rowY = y;
+      let rowH = 6;
+
+      if (r.qrCodeData) {
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(10);
+        doc.text('Verification QR:', 14, rowY);
+        try {
+          doc.addImage(r.qrCodeData, 'PNG', 14, rowY + 2, 30, 30);
+          rowH = 34;
+        } catch {}
+      }
+
+      if (r.redeemToken) {
+        const barcodeW = 56;
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(10);
+        doc.text('Redeem Barcode:', pageW - 14, rowY, { align: 'right' });
+        const canvas = document.createElement('canvas');
+        JsBarcode(canvas, r.redeemToken, {
+          format: 'CODE128',
+          width: 2,
+          height: 50,
+          displayValue: false,
+          margin: 4,
+        });
+        const barcodeDataUrl = canvas.toDataURL('image/png');
+        doc.addImage(barcodeDataUrl, 'PNG', pageW - 14 - barcodeW, rowY + 2, barcodeW, 18);
+        rowH = Math.max(rowH, 22);
+      }
+
+      y = rowY + rowH + 4;
+    } else {
+      addRow('Redeem Token', '-');
+      y += 4;
     }
 
     doc.setDrawColor(200);
@@ -349,8 +405,8 @@ export const RequisitionsPipeline: React.FC = () => {
               <form onSubmit={handleQuickReq} className="space-y-4">
                 <div className="bg-zinc-950/30 border border-zinc-850 rounded p-3 text-[10px] text-zinc-400 font-mono space-y-1">
                   <p><span className="text-zinc-500">Truck:</span> {myTruck ? `${myTruck.plateNumber} (${myTruck.type})` : 'No assigned truck'}</p>
-                  <p><span className="text-zinc-500">Driver:</span> {activeDriverRecord?.name || activeUser?.name}</p>
-                  <p><span className="text-zinc-500">Fuel:</span> {qrFuelType} @ ${qrFuelType === 'Petrol' ? '2.16' : '2.18'}/L</p>
+                  <p><span className="text-zinc-500">Requestor:</span> {activeUser?.name}</p>
+                  <p><span className="text-zinc-500">Fuel:</span> {qrFuelType} @ ${qrFuelType === 'Petrol' ? fuelPrices.petrol.toFixed(2) : fuelPrices.diesel.toFixed(2)}/L</p>
                   <div className="border-t border-zinc-800 pt-1.5 mt-1.5 space-y-0.5">
                     <p><span className="text-zinc-500">Prepaid Diesel:</span> <span className="text-blue-400 font-bold">{prepaidFuelBalance.diesel.toLocaleString()} L</span></p>
                     <p><span className="text-zinc-500">Prepaid Petrol:</span> <span className="text-emerald-400 font-bold">{prepaidFuelBalance.petrol.toLocaleString()} L</span></p>
@@ -365,7 +421,7 @@ export const RequisitionsPipeline: React.FC = () => {
                   </div>
                   <div>
                     <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider font-mono mb-1">Est. Cost</label>
-                    <input type="number" readOnly value={Math.round(qrLitres * (qrFuelType === 'Petrol' ? 2.16 : 2.18))}
+                    <input type="number" readOnly value={Math.round(qrLitres * (qrFuelType === 'Petrol' ? fuelPrices.petrol : fuelPrices.diesel))}
                       className="w-full bg-[#181e35] border border-zinc-850 p-2.5 rounded text-zinc-500 font-mono" />
                   </div>
                 </div>
@@ -373,9 +429,45 @@ export const RequisitionsPipeline: React.FC = () => {
                   <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider font-mono mb-1">Fuel Type</label>
                   <select required value={qrFuelType} onChange={(e) => setQrFuelType(e.target.value as 'Diesel' | 'Petrol')}
                     className="w-full bg-[#0c0f1d] border border-zinc-850 p-2.5 rounded text-zinc-200 cursor-pointer">
-                    <option value="Diesel">Diesel ($2.18/L)</option>
-                    <option value="Petrol">Petrol ($2.16/L)</option>
+                    <option value="Diesel">Diesel (${fuelPrices.diesel.toFixed(2)}/L)</option>
+                    <option value="Petrol">Petrol (${fuelPrices.petrol.toFixed(2)}/L)</option>
                   </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider font-mono mb-1">Filling Station</label>
+                  <select value={qrFillingStation} onChange={(e) => setQrFillingStation(e.target.value)}
+                    className="w-full bg-[#0c0f1d] border border-zinc-850 p-2.5 rounded text-zinc-200 cursor-pointer">
+                    <option value="Glow Petroleum (Plumtree Rd)">Glow Petroleum (Plumtree Rd)</option>
+                    <option value="Glow Petroleum">Glow Petroleum</option>
+                    <option value="Total Energies">Total Energies</option>
+                    <option value="Engen">Engen</option>
+                    <option value="Zuva Petroleum">Zuva Petroleum</option>
+                    <option value="Puma Energy">Puma Energy</option>
+                    <option value="Redan">Redan</option>
+                    <option value="Sakunda">Sakunda</option>
+                    <option value="custom">✦ Other Station...</option>
+                  </select>
+                  {qrFillingStation === 'custom' && (
+                    <input type="text" required placeholder="Enter station name" value={qrCustomStation || ''}
+                      onChange={(e) => setQrCustomStation(e.target.value)}
+                      className="w-full bg-[#0c0f1d] border border-zinc-850 p-2.5 rounded text-zinc-200 font-mono mt-2" />
+                  )}
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider font-mono mb-1">Driver Name</label>
+                  <select required value={qrDriverId} onChange={(e) => setQrDriverId(e.target.value)}
+                    className="w-full bg-[#0c0f1d] border border-zinc-850 p-2.5 rounded text-zinc-200 cursor-pointer">
+                    <option value="">-- Select Driver --</option>
+                    {drivers.map(d => (
+                      <option key={d.id} value={d.id}>{d.name}</option>
+                    ))}
+                    <option value="custom">✦ Register Temporary Custom Driver...</option>
+                  </select>
+                  {qrDriverId === 'custom' && (
+                    <input type="text" required placeholder="Enter driver name" value={qrCustomDriver}
+                      onChange={(e) => setQrCustomDriver(e.target.value)}
+                      className="w-full bg-[#0c0f1d] border border-zinc-850 p-2.5 rounded text-zinc-200 font-mono mt-2" />
+                  )}
                 </div>
                 <div>
                   <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider font-mono mb-1">License Plate</label>
@@ -385,7 +477,13 @@ export const RequisitionsPipeline: React.FC = () => {
                     {trucks.map(t => (
                       <option key={t.id} value={t.plateNumber}>{t.plateNumber} ({t.model || t.type})</option>
                     ))}
+                    <option value="custom">✦ Custom Plate...</option>
                   </select>
+                  {qrPlate === 'custom' && (
+                    <input type="text" required placeholder="Enter license plate" value={qrCustomPlate}
+                      onChange={(e) => setQrCustomPlate(e.target.value)}
+                      className="w-full bg-[#0c0f1d] border border-zinc-850 p-2.5 rounded text-zinc-200 font-mono mt-2" />
+                  )}
                 </div>
                 <div>
                   <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider font-mono mb-1">Branch</label>
@@ -395,7 +493,13 @@ export const RequisitionsPipeline: React.FC = () => {
                     {QUICK_BRANCHES.map(b => (
                       <option key={b} value={b}>{b}</option>
                     ))}
+                    <option value="custom">✦ Other Branch...</option>
                   </select>
+                  {qrBranch === 'custom' && (
+                    <input type="text" required placeholder="Enter branch name" value={qrCustomBranch}
+                      onChange={(e) => setQrCustomBranch(e.target.value)}
+                      className="w-full bg-[#0c0f1d] border border-zinc-850 p-2.5 rounded text-zinc-200 font-mono mt-2" />
+                  )}
                 </div>
                 <div>
                   <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider font-mono mb-1">Destination</label>
@@ -446,7 +550,7 @@ export const RequisitionsPipeline: React.FC = () => {
                   <X size={14} />
                 </button>
               </div>
-              <form onSubmit={(e) => { e.preventDefault(); editRequisitionQuantity(editTarget.id, editLitres, Math.round(editLitres * (editTarget.fuelType === 'Petrol' ? 2.16 : 2.18))); setShowEditQtyModal(false); }} className="space-y-4">
+              <form onSubmit={(e) => { e.preventDefault(); editRequisitionQuantity(editTarget.id, editLitres, Math.round(editLitres * (editTarget.fuelType === 'Petrol' ? fuelPrices.petrol : fuelPrices.diesel))); setShowEditQtyModal(false); toast.success('Quantity updated'); }} className="space-y-4">
                 <div>
                   <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider font-mono mb-1">Litres Requested</label>
                   <input type="number" min="1" required value={editLitres}
@@ -455,7 +559,7 @@ export const RequisitionsPipeline: React.FC = () => {
                 </div>
                 <div>
                   <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider font-mono mb-1">New Estimated Cost</label>
-                  <input type="number" readOnly value={Math.round(editLitres * (editTarget.fuelType === 'Petrol' ? 2.16 : 2.18))}
+                  <input type="number" readOnly value={Math.round(editLitres * (editTarget.fuelType === 'Petrol' ? fuelPrices.petrol : fuelPrices.diesel))}
                     className="w-full bg-[#181e35] border border-zinc-850 p-2.5 rounded text-zinc-500 font-mono" />
                 </div>
                 <div className="pt-4 border-t border-zinc-800 flex justify-end gap-3 font-mono">
@@ -498,189 +602,130 @@ export const RequisitionsPipeline: React.FC = () => {
 
         {/* REQUISITIONS TABLE */}
         <div className="bg-[#101424] border border-zinc-800 p-6 rounded-xl overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs bg-zinc-950/25 border border-zinc-850 rounded">
-              <thead>
-                <tr className="border-b border-zinc-800 bg-zinc-900/40 text-zinc-400 font-mono">
-                  <th className="p-3 pl-4">Req Token</th>
-                  <th className="p-3">Asset Plate</th>
-                  <th className="p-3">Request Pilot</th>
-                  <th className="p-3">Date</th>
-                  <th className="p-3">Fuel Type</th>
-                  <th className="p-3">Branch</th>
-                  <th className="p-3">Est. Litres</th>
-                  <th className="p-3 font-mono">Est. USD</th>
-                  <th className="p-3">Purpose / Note</th>
-                  <th className="p-3 text-right">Approval Status</th>
-                  <th className="p-3 pr-4 text-center">Action Trigger</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-850">
-                {filteredRequisitions.map(r => (
-                  <tr key={r.id} className="text-zinc-350 hover:bg-zinc-900/10">
-                    <td className="p-3 pl-4 font-mono font-bold text-orange-400">{r.id}</td>
-                    <td className="p-3 font-mono text-white text-xs uppercase font-bold">{r.truckPlate || r.truckId}</td>
-                    <td className="p-3">{r.driverName}</td>
-                    <td className="p-3 font-mono text-zinc-300">{r.fuelDate || r.dateRequested}</td>
-                    <td className="p-3">
-                      <span className={`px-2 py-0.5 rounded text-[9.5px] font-bold font-mono ${
-                        r.fuelType === 'Petrol' ? 'bg-blue-500/10 text-blue-400' : 'bg-amber-500/10 text-amber-400'
-                      }`}>{r.fuelType || 'Diesel'}</span>
-                    </td>
-                    <td className="p-3 font-mono text-[10px] text-zinc-400">{r.branchName || r.branchId || '-'}</td>
-                    <td className="p-3 font-mono">{r.litresRequested} L</td>
-                    <td className="p-3 font-mono text-amber-500">${r.estimatedCost.toLocaleString()}</td>
-                    <td className="p-3 font-sans text-zinc-500 italic max-w-xs truncate">{r.purpose}</td>
-                    <td className="p-3 text-right">
-                      <div>
-                        <span className={`px-2 py-0.5 rounded text-[9.5px] uppercase font-bold font-mono ${
-                          r.status === 'Approved' ? 'bg-emerald-500/10 text-emerald-400' :
-                          r.status === 'Verified' ? 'bg-purple-500/10 text-purple-400' :
-                          r.status === 'Reviewed' ? 'bg-blue-500/10 text-blue-400' :
-                          r.status === 'Redeemed' ? 'bg-zinc-800 text-zinc-400 font-light' :
-                          r.status === 'Rejected' ? 'bg-red-500/10 text-red-400' : 'bg-yellow-500/10 text-yellow-500 animate-pulse'
-                        }`}>{r.status}</span>
-                      </div>
-                      {r.status === 'Reviewed' && r.reviewedBy && (
-                        <div className="mt-1 text-[9px] text-blue-400 font-mono">by: {r.reviewedBy}</div>
-                      )}
-                      {r.status === 'Verified' && r.verifiedBy && (
-                        <div className="mt-1 text-[9px] text-purple-400 font-mono">verified by: {r.verifiedBy}</div>
-                      )}
-                      {r.status === 'Approved' && r.redeemToken && (r.submittedById === activeUser?.id || r.driverId === activeUser?.id) && (
-                        <div className="mt-1 text-[10px] text-yellow-400 font-bold font-mono">
-                          Token: <span className="underline select-all tracking-widest">{r.redeemToken}</span>
-                        </div>
-                      )}
-                      {r.status === 'Approved' && r.redeemToken && (r.submittedById === activeUser?.id || r.driverId === activeUser?.id) && (
-                        <div className="mt-1">
-                          <Barcode value={r.redeemToken} className="bg-white rounded" />
-                        </div>
-                      )}
-                      {r.status === 'Approved' && r.qrCodeData && (r.submittedById === activeUser?.id || r.driverId === activeUser?.id) && (
-                        <div className="mt-1.5">
-                          <img 
-                            src={r.qrCodeData} 
-                            alt="Verification QR" 
-                            className="w-16 h-16 rounded border border-zinc-700"
-                            title="Scan to verify approver authenticity"
-                          />
-                        </div>
-                      )}
-                      {r.status === 'Approved' && r.approvedBy && (
-                        <div className="mt-1 text-[9px] text-emerald-400 font-mono">by: {r.approvedBy}</div>
-                      )}
-                      {r.status === 'Rejected' && r.rejectionReason && (
-                        <div className="mt-1 text-[9px] text-red-400 font-mono italic max-w-[140px] truncate" title={r.rejectionReason}>
-                          "{r.rejectionReason}"
-                        </div>
-                      )}
-                      {r.status === 'Rejected' && r.rejectedBy && (
-                        <div className="mt-1 text-[9px] text-zinc-500 font-mono">by: {r.rejectedBy}</div>
-                      )}
-                      {r.status === 'Redeemed' && r.redeemedByGasStation && (
-                        <div className="mt-1 text-[9px] text-zinc-500 font-mono italic">
-                          At: {r.redeemedByGasStation}
-                        </div>
-                      )}
-                    </td>
-                    <td className="p-3 pr-4 text-center">
+          <PaginatedTable
+            data={filteredRequisitions}
+            searchFields={['id', 'truckPlate', 'driverName', 'purpose', 'branchName']}
+            pageSize={15}
+            keyExtractor={r => r.id}
+            emptyMessage="No requisitions match the current filters."
+            columns={[
+              { header: 'Req Token', accessor: 'id', sortable: true, className: 'font-mono font-bold text-orange-400', headerClassName: 'pl-4' },
+              { header: 'Asset Plate', accessor: 'truckPlate', sortable: true, className: 'font-mono text-white text-xs uppercase font-bold', render: r => r.truckPlate || r.truckId },
+              { header: 'Request Pilot', accessor: 'driverName', sortable: true },
+              { header: 'Date', accessor: 'fuelDate', sortable: true, className: 'font-mono text-zinc-300', render: r => r.fuelDate || r.dateRequested },
+              {
+                header: 'Fuel Type',
+                sortable: true,
+                render: r => (
+                  <span className={`px-2 py-0.5 rounded text-[9.5px] font-bold font-mono ${
+                    r.fuelType === 'Petrol' ? 'bg-blue-500/10 text-blue-400' : 'bg-amber-500/10 text-amber-400'
+                  }`}>{r.fuelType || 'Diesel'}</span>
+                )
+              },
+              { header: 'Branch', accessor: 'branchName', className: 'font-mono text-[10px] text-zinc-400', render: r => r.branchName || r.branchId || '-' },
+              { header: 'Est. Litres', accessor: 'litresRequested', sortable: true, className: 'font-mono', render: r => <span>{r.litresRequested} L</span> },
+              { header: 'Est. USD', accessor: 'estimatedCost', sortable: true, className: 'font-mono text-amber-500', render: r => <span>${r.estimatedCost.toLocaleString()}</span> },
+              { header: 'Purpose / Note', render: r => <span className="font-sans text-zinc-500 italic max-w-xs truncate block">{r.purpose}</span> },
+              {
+                header: 'Approval Status',
+                sortable: true,
+                render: r => (
+                  <div>
+                    <span className={`px-2 py-0.5 rounded text-[9.5px] uppercase font-bold font-mono ${
+                      r.status === 'Approved' ? 'bg-emerald-500/10 text-emerald-400' :
+                      r.status === 'Reviewed' ? 'bg-blue-500/10 text-blue-400' :
+                      r.status === 'Verified' ? 'bg-sky-500/10 text-sky-400' :
+                      r.status === 'Redeemed' ? 'bg-zinc-800 text-zinc-400 font-light' :
+                      r.status === 'Rejected' ? 'bg-red-500/10 text-red-400' : 'bg-yellow-500/10 text-yellow-500 animate-pulse'
+                    }`}>{r.status}</span>
+                    {r.status === 'Reviewed' && r.reviewedBy && (
+                      <div className="mt-1 text-[9px] text-blue-400 font-mono">by: {r.reviewedBy}</div>
+                    )}
+                    {r.status === 'Verified' && r.verifiedBy && (
+                      <div className="mt-1 text-[9px] text-sky-400 font-mono">by: {r.verifiedBy}</div>
+                    )}
+                    {r.status === 'Approved' && r.approvedBy && (
+                      <div className="mt-1 text-[9px] text-emerald-400 font-mono">by: {r.approvedBy}</div>
+                    )}
+                    {r.status === 'Rejected' && r.rejectionReason && (
+                      <div className="mt-1 text-[9px] text-red-400 font-mono italic max-w-[140px] truncate" title={r.rejectionReason}>"{r.rejectionReason}"</div>
+                    )}
+                    {r.status === 'Rejected' && r.rejectedBy && (
+                      <div className="mt-1 text-[9px] text-zinc-500 font-mono">by: {r.rejectedBy}</div>
+                    )}
+                    {r.status === 'Redeemed' && r.redeemedByGasStation && (
+                      <div className="mt-1 text-[9px] text-zinc-500 font-mono italic">At: {r.redeemedByGasStation}</div>
+                    )}
+                  </div>
+                )
+              },
+              {
+                header: 'Action Trigger',
+                render: r => (
+                  <div className="text-center">
+                    <button
+                      onClick={() => { setViewRequisition(r); setShowViewModal(true); }}
+                      className="px-2 py-0.5 bg-zinc-700 hover:bg-zinc-600 text-white font-bold rounded text-[9.5px] cursor-pointer flex items-center gap-1 mb-1 mx-auto"
+                      title="View full details"
+                    >
+                      <Eye size={10} /> View
+                    </button>
+                    {isTreasurer && (
                       <button
-                        onClick={() => { setViewRequisition(r); setShowViewModal(true); }}
-                        className="px-2 py-0.5 bg-zinc-700 hover:bg-zinc-600 text-white font-bold rounded text-[9.5px] cursor-pointer flex items-center gap-1 mb-1 mx-auto"
-                        title="View full details"
+                        onClick={() => downloadPdf(r)}
+                        className="px-2 py-0.5 bg-orange-500 hover:bg-orange-400 text-black font-extrabold rounded text-[9.5px] cursor-pointer flex items-center gap-1 mb-1 mx-auto"
+                        title="Download requisition as PDF"
                       >
-                        <Eye size={10} /> View
+                        <Download size={10} /> PDF
                       </button>
-                      {r.status === 'Pending' && canReview ? (
-                        <div className="flex justify-center gap-1.5 font-mono">
-                          <button
-                            onClick={() => reviewRequisition(r.id)}
-                            className="px-2 py-0.5 bg-blue-500 hover:bg-blue-400 text-black font-extrabold rounded text-[9.5px] cursor-pointer flex items-center gap-1"
-                            title="Review this requisition"
-                          >
-                            <Eye size={10} /> Review
-                          </button>
-                          <button
-                            onClick={() => openRejectModal(r.id)}
-                            className="px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white font-bold rounded text-[9.5px] cursor-pointer flex items-center gap-1"
-                            title="Reject this requisition"
-                          >
-                            <ThumbsDown size={10} /> Reject
-                          </button>
-                        </div>
-                      ) : r.status === 'Pending' ? (
-                        <span className="text-zinc-600 font-mono text-[10px] italic">Awaiting <span className="text-orange-400 not-italic">Treasurer</span></span>
-                      ) : r.status === 'Reviewed' && canVerify ? (
-                        <div className="flex justify-center gap-1.5 font-mono">
-                          <button
-                            onClick={() => verifyRequisition(r.id)}
-                            className="px-2 py-0.5 bg-sky-500 hover:bg-sky-400 text-black font-extrabold rounded text-[9.5px] cursor-pointer flex items-center gap-1"
-                            title="Verify this requisition"
-                          >
-                            <Eye size={10} /> Verify
-                          </button>
-                          <button
-                            onClick={() => openRejectModal(r.id)}
-                            className="px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white font-bold rounded text-[9.5px] cursor-pointer flex items-center gap-1"
-                            title="Reject this requisition"
-                          >
-                            <ThumbsDown size={10} /> Reject
-                          </button>
-                        </div>
-                      ) : r.status === 'Reviewed' ? (
-                        <span className="text-zinc-500 font-mono text-[10px] italic">Awaiting <span className="text-sky-400 not-italic">Accounts/Manager</span></span>
-                      ) : r.status === 'Verified' && canApprove ? (
-                        <div className="flex justify-center gap-1.5 font-mono">
-                          <button
-                            onClick={() => approveRequisition(r.id)}
-                            className="px-2 py-0.5 bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold rounded text-[9.5px] cursor-pointer flex items-center gap-1"
-                            title="Final approve this requisition"
-                          >
-                            <ThumbsUp size={10} /> Final Approve
-                          </button>
-                          <button
-                            onClick={() => openRejectModal(r.id)}
-                            className="px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white font-bold rounded text-[9.5px] cursor-pointer flex items-center gap-1"
-                            title="Reject this requisition"
-                          >
-                            <ThumbsDown size={10} /> Reject
-                          </button>
-                        </div>
-                      ) : r.status === 'Verified' ? (
-                        <span className="text-zinc-500 font-mono text-[10px] italic">Awaiting <span className="text-emerald-400 not-italic">Director</span></span>
-                      ) : r.status === 'Approved' && (r.submittedById === activeUser?.id || r.driverId === activeUser?.id) ? (
-                        <div className="flex justify-center gap-1.5 font-mono">
-                          <button
-                            onClick={() => downloadPdf(r)}
-                            className="px-2 py-0.5 bg-orange-500 hover:bg-orange-400 text-black font-extrabold rounded text-[9.5px] cursor-pointer flex items-center gap-1"
-                            title="Download requisition as PDF"
-                          >
-                            <Download size={10} /> PDF
-                          </button>
-                        </div>
-                      ) : r.status === 'Approved' ? (
-                        <span className="text-zinc-600 font-mono text-[10px]"><span className="text-emerald-400 font-bold">Approved</span> by {r.approvedBy || 'Director'}</span>
-                      ) : r.status === 'Redeemed' ? (
-                        <span className="text-zinc-500 font-mono text-[10px]"><span className="text-zinc-400">Redeemed</span> by: {r.driverName || r.driverId}</span>
-                      ) : (
-                        <span className="text-zinc-600 font-mono text-[10px] italic">{r.status}</span>
-                      )}
-                      {(r.status === 'Pending' || r.status === 'Reviewed') && isAccounts ? (
-                        <button
-                          onClick={() => { setEditTarget(r); setEditLitres(r.litresRequested); setShowEditQtyModal(true); }}
-                          className="mt-1.5 px-2 py-0.5 bg-orange-600 hover:bg-orange-500 text-black font-extrabold rounded text-[9.5px] cursor-pointer flex items-center gap-1 mx-auto"
-                          title="Edit fuel quantity"
-                        >
-                          <span className="text-[10px]">✏️</span> Edit Qty
-                        </button>
-                      ) : null}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                    )}
+                    {r.status === 'Pending' && canReview ? (
+                      <div className="flex justify-center gap-1.5 font-mono">
+                        <button onClick={() => { reviewRequisition(r.id); toast.success('Requisition reviewed'); }}
+                          className="px-2 py-0.5 bg-blue-500 hover:bg-blue-400 text-black font-extrabold rounded text-[9.5px] cursor-pointer flex items-center gap-1"
+                          title="Review this requisition"><Eye size={10} /> Review</button>
+                        <button onClick={() => openRejectModal(r.id)}
+                          className="px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white font-bold rounded text-[9.5px] cursor-pointer flex items-center gap-1"
+                          title="Reject this requisition"><ThumbsDown size={10} /> Reject</button>
+                      </div>
+                    ) : r.status === 'Pending' ? (
+                      <span className="text-zinc-600 font-mono text-[10px] italic">Awaiting <span className="text-orange-400 not-italic">Treasurer</span></span>
+                    ) : r.status === 'Reviewed' && canApprove ? (
+                      <div className="flex justify-center gap-1.5 font-mono">
+                        <button onClick={() => { approveRequisition(r.id); toast.success('Requisition approved'); }}
+                          className="px-2 py-0.5 bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold rounded text-[9.5px] cursor-pointer flex items-center gap-1"
+                          title="Approve this requisition"><ThumbsUp size={10} /> Approve</button>
+                        <button onClick={() => openRejectModal(r.id)}
+                          className="px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white font-bold rounded text-[9.5px] cursor-pointer flex items-center gap-1"
+                          title="Reject this requisition"><ThumbsDown size={10} /> Reject</button>
+                      </div>
+                    ) : r.status === 'Reviewed' ? (
+                      <span className="text-zinc-500 font-mono text-[10px] italic">Awaiting <span className="text-sky-400 not-italic">Accounts/Manager</span></span>
+                    ) : r.status === 'Approved' && (r.submittedById === activeUser?.id || r.driverId === activeUser?.id) ? (
+                      <div className="flex justify-center gap-1.5 font-mono">
+                        <button onClick={() => downloadPdf(r)}
+                          className="px-2 py-0.5 bg-orange-500 hover:bg-orange-400 text-black font-extrabold rounded text-[9.5px] cursor-pointer flex items-center gap-1"
+                          title="Download requisition as PDF"><Download size={10} /> PDF</button>
+                      </div>
+                    ) : r.status === 'Approved' ? (
+                      <span className="text-zinc-600 font-mono text-[10px]"><span className="text-emerald-400 font-bold">Approved</span> by {r.approvedBy || 'Accounts'}</span>
+                    ) : r.status === 'Redeemed' ? (
+                      <span className="text-zinc-500 font-mono text-[10px]"><span className="text-zinc-400">Redeemed</span> by: {r.driverName || r.driverId}</span>
+                    ) : (
+                      <span className="text-zinc-600 font-mono text-[10px] italic">{r.status}</span>
+                    )}
+                    {(r.status === 'Pending' || r.status === 'Reviewed') && isAccounts ? (
+                      <button onClick={() => { setEditTarget(r); setEditLitres(r.litresRequested); setShowEditQtyModal(true); }}
+                        className="mt-1.5 px-2 py-0.5 bg-orange-600 hover:bg-orange-500 text-black font-extrabold rounded text-[9.5px] cursor-pointer flex items-center gap-1 mx-auto"
+                        title="Edit fuel quantity">
+                        <span className="text-[10px]">✏️</span> Edit Qty
+                      </button>
+                    ) : null}
+                  </div>
+                )
+              },
+            ]}
+          />
         </div>
 
       </div>
@@ -757,7 +802,7 @@ export const RequisitionsPipeline: React.FC = () => {
                     onChange={(e) => {
                       const litres = parseInt(e.target.value) || 0;
                       setReqLitres(litres);
-                      setReqCost(Math.round(litres * (reqFuelType === 'Petrol' ? 2.16 : 2.18)));
+                      setReqCost(Math.round(litres * (reqFuelType === 'Petrol' ? fuelPrices.petrol : fuelPrices.diesel)));
                     }}
                     className="w-full bg-[#0c0f1d] border border-zinc-850 p-2.5 rounded text-zinc-200"
                   />
@@ -770,7 +815,7 @@ export const RequisitionsPipeline: React.FC = () => {
                     readOnly
                     value={reqCost}
                     className="w-full bg-[#181e35] border border-zinc-850 p-2.5 rounded text-zinc-500 outline-none"
-                    title={`Computed at $${reqFuelType === 'Petrol' ? '2.16' : '2.18'}/Litre rate`}
+                    title={`Computed at $${reqFuelType === 'Petrol' ? fuelPrices.petrol.toFixed(2) : fuelPrices.diesel.toFixed(2)}/Litre rate`}
                   />
                 </div>
               </div>
@@ -795,7 +840,7 @@ export const RequisitionsPipeline: React.FC = () => {
                     onChange={(e) => {
                       const type = e.target.value as 'Diesel' | 'Petrol';
                       setReqFuelType(type);
-                      setReqCost(Math.round(reqLitres * (type === 'Petrol' ? 2.16 : 2.18)));
+                      setReqCost(Math.round(reqLitres * (type === 'Petrol' ? fuelPrices.petrol : fuelPrices.diesel)));
                     }}
                     className="w-full bg-[#0c0f1d] border border-zinc-850 p-2.5 rounded text-zinc-200 cursor-pointer"
                   >
@@ -1020,6 +1065,17 @@ export const RequisitionsPipeline: React.FC = () => {
                   <p className="text-zinc-300 font-mono text-[10px]">Actual Cost: ${viewRequisition.redeemedActualCost?.toLocaleString()}</p>
                   <p className="text-zinc-300 font-mono text-[10px]">Attendant: {viewRequisition.redeemedAttendantSignature}</p>
                   <p className="text-zinc-300 font-mono text-[10px]">Date: {viewRequisition.redeemDate}</p>
+                </div>
+              )}
+
+              {isTreasurer && (
+                <div className="pt-3 border-t border-zinc-800">
+                  <button
+                    onClick={() => downloadPdf(viewRequisition)}
+                    className="w-full px-4 py-2 bg-orange-500 hover:bg-orange-400 text-black font-extrabold rounded text-xs cursor-pointer flex items-center justify-center gap-2 shadow-lg"
+                  >
+                    <Download size={14} /> Download PDF
+                  </button>
                 </div>
               )}
             </div>

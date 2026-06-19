@@ -8,11 +8,12 @@ import {
 } from 'lucide-react';
 import { Truck, TruckStatus } from '../types';
 import { compressAndGetBase64 } from '../utils/compress';
+import toast from 'react-hot-toast';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
 export const Fleet: React.FC = () => {
-  const { trucks, drivers, addTruck, updateTruck, updateTruckStatus, assignDriverToTruck, deleteTruck, branches } = useFleet();
+  const { trucks, drivers, addTruck, updateTruck, updateTruckStatus, assignDriverToTruck, deleteTruck, branches, fuelLogs } = useFleet();
 
   const [viewTab, setViewTab] = useState<'roster' | 'tracking'>('roster');
   const [search, setSearch] = useState('');
@@ -57,6 +58,42 @@ export const Fleet: React.FC = () => {
   const [editTrackerModel, setEditTrackerModel] = useState('');
   const [editTrackerSim, setEditTrackerSim] = useState('');
 
+  // Capacity management
+  const [capacityOptions, setCapacityOptions] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem('fc_capacityOptions');
+      if (stored) { const p = JSON.parse(stored); if (Array.isArray(p) && p.length) return p; }
+    } catch {}
+    return ['30 Tons', '40 Tons', '45 Tons', '60 Tons', '100 Tons'];
+  });
+  const [showManageCapacities, setShowManageCapacities] = useState(false);
+  const [capacityInput, setCapacityInput] = useState('');
+  const [editingCapacityIdx, setEditingCapacityIdx] = useState<number | null>(null);
+  const [newCapacityName, setNewCapacityName] = useState('');
+
+  const calcFuelConsumption = (truckId: string): { calculated: number | null; label: string } => {
+    const logs = fuelLogs
+      .filter(f => f.truckId === truckId && f.odometer > 0 && f.litres > 0)
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime() || a.odometer - b.odometer);
+    if (logs.length < 2) return { calculated: null, label: 'N/A' };
+    let totalLitres = 0;
+    let totalDistance = 0;
+    for (let i = 1; i < logs.length; i++) {
+      const dist = logs[i].odometer - logs[i - 1].odometer;
+      if (dist > 0) {
+        totalLitres += logs[i - 1].litres;
+        totalDistance += dist;
+      }
+    }
+    if (totalDistance === 0) return { calculated: null, label: 'N/A' };
+    const avg = (totalLitres / totalDistance) * 100;
+    return { calculated: Math.round(avg * 10) / 10, label: `${Math.round(avg * 10) / 10} L/100km` };
+  };
+
+  const isLightVehicle = (t: Truck) =>
+    (t.category || 'Truck') === 'Light Vehicle' ||
+    ['Sedan', 'Pick-Up', 'SUV', 'Panel Van', 'Double Cab'].includes(t.type);
+
   const availableStations = branches && branches.length > 0 
     ? branches.map(b => ({ name: b.name, lat: b.lat, lng: b.lng }))
     : [];
@@ -66,7 +103,7 @@ export const Fleet: React.FC = () => {
     const matchesSearch = t.plateNumber.toLowerCase().includes(search.toLowerCase()) || 
       t.id.toLowerCase().includes(search.toLowerCase()) ||
       t.type.toLowerCase().includes(search.toLowerCase());
-    const matchesCategory = vehicleFilter === 'All' || (t.category || 'Truck') === vehicleFilter;
+    const matchesCategory = vehicleFilter === 'All' || (isLightVehicle(t) ? 'Light Vehicle' : 'Truck') === vehicleFilter;
     return matchesSearch && matchesCategory;
   });
 
@@ -76,15 +113,17 @@ export const Fleet: React.FC = () => {
     let lat = useCustomLocation ? customLat : (availableStations[locationPreset]?.lat || 0);
     let lng = useCustomLocation ? customLng : (availableStations[locationPreset]?.lng || 0);
 
+    const isLight = ['Sedan', 'Pick-Up', 'SUV', 'Panel Van', 'Double Cab'].includes(type);
     addTruck({
       plateNumber,
       type,
       model,
-      capacity,
+      capacity: isLight ? '-' : capacity,
       fuelRate,
       currentLat: lat,
       currentLng: lng,
       imageUrl: imageUrl.trim() || undefined,
+      category: isLight ? 'Light Vehicle' : undefined,
       trackerImei: trackerImei.trim() || undefined,
       trackerModel: trackerImei.trim() ? trackerModel : undefined,
       trackerSimCard: trackerImei.trim() ? trackerSimCard.trim() || undefined : undefined
@@ -103,6 +142,7 @@ export const Fleet: React.FC = () => {
     setTrackerSimCard('');
     setTrackerModel('');
     setShowAddModal(false);
+    toast.success('Vehicle commissioned');
   };
 
   const handleAddLightVehicle = (e: React.FormEvent) => {
@@ -121,6 +161,7 @@ export const Fleet: React.FC = () => {
     setLvType('');
     setLvModel('');
     setShowLightVehicleModal(false);
+    toast.success('Light vehicle commissioned');
   };
 
   const handleDriverAssignment = (e: React.FormEvent) => {
@@ -129,6 +170,7 @@ export const Fleet: React.FC = () => {
 
     assignDriverToTruck(selectedTruck.id, assignDriverId);
     setAssignDriverId('');
+    toast.success('Driver paired to vehicle');
 
     // Instant local state sync to refresh pane
     const tId = selectedTruck.id;
@@ -174,6 +216,7 @@ export const Fleet: React.FC = () => {
       trackerSimCard: editTrackerImei ? editTrackerSim || undefined : undefined
     } : null);
     setShowEditTruckModal(false);
+    toast.success('Vehicle details updated');
   };
 
   const selectedTruckDriver = selectedTruck ? drivers.find(d => d.id === selectedTruck.driverId) : null;
@@ -441,47 +484,44 @@ export const Fleet: React.FC = () => {
                             : 'border-zinc-800 hover:border-zinc-700 hover:bg-[#12162a]'
                         }`}
                       >
-                        {/* Upper Card Block: Modern Image Placeholder/Renders */}
+                        {/* Upper Card Block: Image + Plate overlay */}
                         <div className="relative h-28 w-full bg-[#070914] border-b border-zinc-850/60 flex items-center justify-center overflow-hidden">
-                          {/* Pattern overlay */}
+                          {/* Grid pattern */}
                           <div className="absolute inset-0 bg-[linear-gradient(to_right,#1f2438_1px,transparent_1px),linear-gradient(to_bottom,#1f2438_1px,transparent_1px)] bg-[size:12px_12px] opacity-20"></div>
                           
-                          {/* Optional custom picture or schematic placeholder */}
                           {t.imageUrl ? (
                             <img 
                               src={t.imageUrl} 
                               alt={t.type}
                               referrerPolicy="no-referrer"
                               className="object-cover w-full h-full"
-                              onError={(e) => {
-                                (e.target as any).style.display = 'none';
-                              }}
+                              onError={(e) => { (e.target as any).style.display = 'none'; }}
                             />
                           ) : (
                             <div className="flex flex-col items-center justify-center space-y-1 z-10">
                               <span className="text-3xl filter drop-shadow">
-                                {(t.category || 'Truck') === 'Light Vehicle' ? '🚗' :
+                                {(isLightVehicle(t)) ? '🚗' :
                                  t.type.includes('Dump') || t.type.includes('Dumper') ? '🚧' : 
                                  t.type.includes('Flatbed') ? '🚚' : '🚛'}
                               </span>
-                              <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest font-mono bg-zinc-900/80 px-2 py-0.5 rounded border border-zinc-800">
+                              <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest font-mono bg-zinc-900/80 px-2 py-0.5 rounded border border-zinc-800">
                                 {t.type.split(' ').slice(0, 2).join(' ')}
                               </span>
                             </div>
                           )}
 
-                          {/* Decorative overlay corner strip */}
+                          {/* Category corner strip */}
                           <div className="absolute top-0 right-0 h-10 w-10 overflow-hidden pointer-events-none">
                             <div className={`text-black text-[7px] font-bold font-mono py-1 text-center uppercase tracking-wider block rotate-45 translate-x-3 -translate-y-0.5 w-16 ${
-                              (t.category || 'Truck') === 'Light Vehicle'
+                              isLightVehicle(t)
                                 ? 'bg-gradient-to-r from-emerald-500 to-teal-600'
                                 : 'bg-gradient-to-r from-yellow-500 to-amber-600'
                             }`}>
-                              {(t.category || 'Truck') === 'Light Vehicle' ? 'VEHICLE' : 'HAULER'}
+                              {isLightVehicle(t) ? 'VEHICLE' : 'HAULER'}
                             </div>
                           </div>
 
-                          {/* State dot */}
+                          {/* Status dot */}
                           <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-black/60 px-2 py-0.5 rounded-full border border-zinc-800">
                             <span className={`h-1.5 w-1.5 rounded-full ${
                               t.status === 'Active' ? 'bg-emerald-500 animate-pulse' :
@@ -491,59 +531,80 @@ export const Fleet: React.FC = () => {
                             <span className="text-[8px] font-bold font-mono uppercase tracking-wider text-zinc-300">{t.status}</span>
                           </div>
 
-                          {/* Capacity Badge (hide for light vehicles) */}
-                          {(t.category || 'Truck') !== 'Light Vehicle' && (
-                            <div className="absolute bottom-2 right-2 bg-zinc-950/95 text-orange-400 font-mono text-[9px] font-black px-1.5 py-0.5 rounded border border-zinc-800 shadow-sm">
+                          {/* Capacity Badge */}
+                          {!isLightVehicle(t) && (
+                            <div className="absolute bottom-2 right-2 bg-zinc-950/95 text-orange-400 font-mono text-[9px] font-black px-1.5 py-0.5 rounded border border-zinc-800 shadow-sm z-10">
                               CAP: {t.capacity}
                             </div>
                           )}
-                        </div>
 
-                        {/* Mid Section: Essential Details */}
-                        <div className="p-3.5 space-y-2">
-                          <div className="flex justify-between items-start gap-2">
-                            <div className="min-w-0">
-                              <h4 className="font-extrabold text-white text-xs truncate leading-snug" title={t.type}>{t.type}</h4>
-                              <p className="text-[10px] text-zinc-500 font-mono mt-0.5 uppercase">Model: {t.model}</p>
-                            </div>
-                            <span className="shrink-0 text-[10px] font-mono select-all bg-[#1a2038] text-zinc-300 px-2 py-0.5 rounded font-black border border-zinc-800 shadow-sm">
+                          {/* Plate number overlay — large and prominent */}
+                          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/85 via-black/40 to-transparent px-3 pt-6 pb-2">
+                            <span className="text-white font-black text-xl tracking-wider drop-shadow-lg select-all">
                               {t.plateNumber}
                             </span>
                           </div>
+                        </div>
 
-                          {/* Specs horizontal layout */}
+                        {/* Mid Section: Model, Type, Specs */}
+                        <div className="p-3.5 space-y-2 flex-1">
+                          <div className="min-w-0">
+                            <h4 className="font-extrabold text-white text-sm truncate leading-snug" title={t.model}>
+                              {t.model}
+                            </h4>
+                            <p className="text-[11px] text-zinc-400 font-mono mt-0.5 truncate">
+                              {t.type}
+                            </p>
+                          </div>
+
+                          {/* Specs row */}
                           <div className="grid grid-cols-2 gap-2 pt-2 border-t border-zinc-800/40 text-[10px] text-zinc-400 font-mono">
                             <div className="space-y-0.5 bg-zinc-950/20 p-1.5 rounded border border-zinc-900 shadow-xs">
-                              <span className="text-zinc-550 block text-[8px] uppercase font-sans">{(t.category || 'Truck') === 'Light Vehicle' ? 'Make / Model' : 'Current Mileage'}</span>
+                              <span className="text-zinc-550 block text-[8px] uppercase font-sans font-semibold">
+                                {isLightVehicle(t) ? 'Make / Model' : 'Odometer'}
+                              </span>
                               <div className="flex items-center gap-1">
-                                {(t.category || 'Truck') === 'Light Vehicle' ? (
-                                  <span className="font-bold text-zinc-300">{t.model || '-'}</span>
+                                {isLightVehicle(t) ? (
+                                  <span className="font-bold text-zinc-200 text-[11px]">{t.model || '-'}</span>
                                 ) : (
                                   <>
-                                    <span className="font-bold text-zinc-300">{t.mileage.toLocaleString()} km</span>
+                                    <span className="font-bold text-zinc-200 text-[11px]">{t.mileage.toLocaleString()} km</span>
                                     {isOverdue && (
-                                      <span className="bg-red-650/20 text-red-500 border border-red-500/10 px-0.5 rounded text-[8px] font-bold cursor-help" title="Immediate Service Overdue!">!</span>
+                                      <span className="bg-red-500/20 text-red-400 border border-red-500/20 px-1 rounded text-[8px] font-bold" title="Service overdue">!</span>
                                     )}
                                   </>
                                 )}
                               </div>
                             </div>
                             <div className="space-y-0.5 bg-zinc-950/20 p-1.5 rounded border border-zinc-900 shadow-xs">
-                              <span className="text-zinc-550 block text-[8px] uppercase font-sans">{(t.category || 'Truck') === 'Light Vehicle' ? 'Plate Number' : 'Fuel Burn Rate'}</span>
-                              <span className="font-bold text-zinc-300">{(t.category || 'Truck') === 'Light Vehicle' ? t.plateNumber : `${t.fuelRate} L/100km`}</span>
+                              <span className="text-zinc-550 block text-[8px] uppercase font-sans font-semibold">
+                                {isLightVehicle(t) ? 'Vehicle ID' : 'Fuel Burn'}
+                              </span>
+                              <span className="font-bold text-zinc-200 text-[11px]">
+                                {isLightVehicle(t) ? t.id : (() => {
+                                  const calc = calcFuelConsumption(t.id);
+                                  if (calc.calculated !== null) {
+                                    return `${calc.calculated} L/100km`;
+                                  }
+                                  return `${t.fuelRate} L/100km`;
+                                })()}
+                              </span>
                             </div>
                           </div>
                         </div>
 
-                        {/* Lower Footer Bar: Driver assignment details */}
-                        <div className="px-3.5 py-2 bg-zinc-950/20 border-t border-zinc-800/40 flex justify-between items-center text-[10px] text-zinc-400 font-mono">
-                          <span className="text-zinc-550 text-[8px] uppercase font-sans">Machinery Captain</span>
+                        {/* Lower Footer Bar: Driver assignment */}
+                        <div className="px-3.5 py-2.5 bg-zinc-950/30 border-t border-zinc-800/40 flex justify-between items-center text-[10px] font-mono">
+                          <span className="text-zinc-500 text-[8px] uppercase tracking-wider font-semibold">Captain</span>
                           {driverObj ? (
-                            <span className="text-orange-400 font-extrabold flex items-center gap-1 truncate max-w-[120px]">
-                              👥 {driverObj.name.split(' ')[0]}
+                            <span className="text-orange-400 font-extrabold flex items-center gap-1.5 truncate max-w-[140px]">
+                              <span className="h-5 w-5 rounded-full bg-orange-500/20 border border-orange-500/30 flex items-center justify-center text-[9px] font-black text-orange-400 shrink-0">
+                                {driverObj.name.charAt(0)}
+                              </span>
+                              {driverObj.name.split(' ')[0]}
                             </span>
                           ) : (
-                            <span className="text-zinc-500 italic text-[9px]">No Pilot Assigned</span>
+                            <span className="text-zinc-500 italic text-[9px]">Unassigned</span>
                           )}
                         </div>
                       </div>
@@ -589,6 +650,7 @@ export const Fleet: React.FC = () => {
                         onClick={() => {
                           updateTruckStatus(selectedTruck.id, st);
                           setSelectedTruck(prev => ({ ...prev!, status: st }));
+                          toast.success(`Status set to ${st}`);
                         }}
                         className={`py-1.5 rounded font-mono text-[10px] font-semibold transition-all cursor-pointer border ${
                           selectedTruck.status === st
@@ -623,6 +685,24 @@ export const Fleet: React.FC = () => {
                       <span className="text-zinc-200 font-bold font-mono">{selectedTruck.mileage.toLocaleString()} km</span>
                     </div>
 
+                    {!isLightVehicle(selectedTruck) && (() => {
+                      const calc = calcFuelConsumption(selectedTruck.id);
+                      return (
+                        <>
+                          <div className="flex justify-between items-center">
+                            <span className="text-zinc-500 flex items-center gap-1.5"><span className="text-[11px]">⛽</span> Actual Consumption:</span>
+                            <span className={`font-bold font-mono ${calc.calculated !== null ? 'text-orange-400' : 'text-zinc-600'}`}>
+                              {calc.label}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center text-[10px]">
+                            <span className="text-zinc-600 flex items-center gap-1.5">Est. (on file):</span>
+                            <span className="text-zinc-400 font-mono">{selectedTruck.fuelRate} L/100km</span>
+                          </div>
+                        </>
+                      );
+                    })()}
+
                     <div className="flex justify-between items-center">
                       <span className="text-zinc-500 flex items-center gap-1.5"><Hammer size={13} /> Service Interval Limit:</span>
                       <span className="text-zinc-200 font-bold font-mono">{selectedTruck.nextServiceMileage.toLocaleString()} km</span>
@@ -648,6 +728,7 @@ export const Fleet: React.FC = () => {
                         onClick={() => {
                           assignDriverToTruck(selectedTruck.id, null);
                           setSelectedTruck(prev => ({ ...prev!, driverId: null }));
+                          toast.success('Driver unpaired');
                         }}
                         className="text-[10px] text-red-500 hover:text-red-400 font-bold font-mono"
                       >
@@ -772,6 +853,7 @@ export const Fleet: React.FC = () => {
                               deleteTruck(selectedTruck.id);
                               setSelectedTruck(null);
                               setConfirmDeleteId(null);
+                              toast.success('Vehicle decommissioned');
                             }}
                             className="flex-1 py-1.5 bg-red-650 hover:bg-red-605 text-white font-mono text-[10px] font-black rounded cursor-pointer text-center"
                           >
@@ -1144,18 +1226,20 @@ export const Fleet: React.FC = () => {
                     className="w-full bg-[#0c0f1d] border border-zinc-850 p-2.5 rounded text-zinc-200 outline-none focus:border-orange-500" />
                 </div>
               </div>
-              {(selectedTruck.category || 'Truck') !== 'Light Vehicle' && (
+              {!isLightVehicle(selectedTruck) && (
                 <div className="grid grid-cols-2 gap-4 font-mono">
                   <div>
                     <label className="block text-[11px] font-bold text-zinc-500 uppercase tracking-wider font-mono mb-1">Capacity</label>
-                    <select value={editCapacity} onChange={(e) => setEditCapacity(e.target.value)}
-                      className="w-full bg-[#0c0f1d] border border-zinc-850 p-2.5 rounded text-zinc-200 outline-none focus:border-orange-500 cursor-pointer">
-                      <option value="30 Tons">30 Tons</option>
-                      <option value="40 Tons">40 Tons</option>
-                      <option value="45 Tons">45 Tons</option>
-                      <option value="60 Tons">60 Tons</option>
-                      <option value="100 Tons">100 Tons</option>
-                    </select>
+                    <div className="flex gap-2">
+                      <select value={editCapacity} onChange={(e) => setEditCapacity(e.target.value)}
+                        className="flex-1 bg-[#0c0f1d] border border-zinc-850 p-2.5 rounded text-zinc-200 outline-none focus:border-orange-500 cursor-pointer">
+                        {capacityOptions.map((c, i) => <option key={i} value={c}>{c}</option>)}
+                      </select>
+                      <button type="button" onClick={() => setShowManageCapacities(true)}
+                        className="px-2.5 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded text-zinc-400 hover:text-orange-400 text-[10px] font-bold cursor-pointer transition-colors">
+                        EDIT
+                      </button>
+                    </div>
                   </div>
                   <div>
                     <label className="block text-[11px] font-bold text-zinc-500 uppercase tracking-wider font-mono mb-1">Fuel Rate (L/100km)</label>
@@ -1262,6 +1346,95 @@ export const Fleet: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MANAGE CAPACITIES MODAL */}
+      {showManageCapacities && (
+        <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4 backdrop-blur-xs" onClick={() => setShowManageCapacities(false)}>
+          <div className="bg-[#121625] border border-zinc-800 w-full max-w-sm rounded-xl shadow-2xl p-5 text-xs font-mono" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center pb-3 border-b border-zinc-800 mb-4">
+              <h3 className="text-sm font-bold text-orange-400 uppercase">Manage Capacities</h3>
+              <button onClick={() => setShowManageCapacities(false)} className="h-7 w-7 rounded-full bg-zinc-900 flex items-center justify-center text-zinc-400 cursor-pointer">
+                <X size={14} />
+              </button>
+            </div>
+            <div className="space-y-2 max-h-60 overflow-y-auto mb-4">
+              {capacityOptions.length === 0 && (
+                <p className="text-zinc-600 text-center py-6">No capacities defined</p>
+              )}
+              {capacityOptions.map((c, i) => (
+                <div key={i} className="flex items-center gap-2 bg-[#0c0f1d] border border-zinc-800 rounded-lg p-2.5">
+                  {editingCapacityIdx === i ? (
+                    <input type="text" value={capacityInput}
+                      onChange={(e) => setCapacityInput(e.target.value)}
+                      className="flex-1 bg-[#0c0f1d] border border-orange-500/50 p-1.5 rounded text-zinc-200 outline-none text-[11px]" />
+                  ) : (
+                    <span className="flex-1 text-zinc-200">{c}</span>
+                  )}
+                  <div className="flex gap-1">
+                    {editingCapacityIdx === i ? (
+                      <>
+                        <button type="button" onClick={() => {
+                          const trimmed = capacityInput.trim();
+                          if (!trimmed) return;
+                          const updated = [...capacityOptions];
+                          updated[i] = trimmed;
+                          setCapacityOptions(updated);
+                          localStorage.setItem('fc_capacityOptions', JSON.stringify(updated));
+                          setEditingCapacityIdx(null);
+                          setCapacityInput('');
+                        }}
+                          className="px-2 py-1 bg-orange-600 text-black font-bold rounded text-[9px] cursor-pointer">
+                          SAVE
+                        </button>
+                        <button type="button" onClick={() => { setEditingCapacityIdx(null); setCapacityInput(''); }}
+                          className="px-2 py-1 bg-zinc-800 text-zinc-400 rounded text-[9px] cursor-pointer">
+                          X
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button type="button" onClick={() => { setCapacityInput(c); setEditingCapacityIdx(i); }}
+                          className="px-2 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 rounded text-[9px] cursor-pointer">
+                          EDIT
+                        </button>
+                        <button type="button" onClick={() => {
+                          const updated = capacityOptions.filter((_, j) => j !== i);
+                          setCapacityOptions(updated);
+                          localStorage.setItem('fc_capacityOptions', JSON.stringify(updated));
+                          if (editCapacity === c) setEditCapacity(updated[0] || '');
+                        }}
+                          className="px-2 py-1 bg-red-600/20 hover:bg-red-600/40 text-red-400 rounded text-[9px] cursor-pointer">
+                          DEL
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="border-t border-zinc-800 pt-3">
+              <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1.5">Add New Capacity</label>
+              <div className="flex gap-2">
+                <input type="text" value={newCapacityName}
+                  onChange={(e) => setNewCapacityName(e.target.value)}
+                  placeholder="e.g. 50 Tons"
+                  className="flex-1 bg-[#0c0f1d] border border-zinc-700 p-2.5 rounded text-zinc-200 outline-none focus:border-orange-500" />
+                <button type="button" onClick={() => {
+                  const trimmed = newCapacityName.trim();
+                  if (!trimmed || capacityOptions.includes(trimmed)) return;
+                  const updated = [...capacityOptions, trimmed];
+                  setCapacityOptions(updated);
+                  localStorage.setItem('fc_capacityOptions', JSON.stringify(updated));
+                  setNewCapacityName('');
+                }}
+                  className="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-black font-bold rounded cursor-pointer">
+                  ADD
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

@@ -1,21 +1,12 @@
 import React, { useState } from 'react';
 import { useFleet } from '../context/FleetContext';
 import { Layout } from '../components/NavigationSidebar';
+import { PaginatedTable, Column } from '../components/PaginatedTable';
 import { Plus, Search, Calendar, Landmark, MapPin, BadgePercent, TrendingUp, X, Trash2 } from 'lucide-react';
 import { CargoType, Job, JobStatus } from '../types';
+import toast from 'react-hot-toast';
 
-// Pre-coded Geolocation station list for Zimbabwe Mining Routes
-export const PRE_CODED_LOCATIONS = [
-  { name: "Hwange Coal Fields", lat: -18.3647, lng: 26.5000 },
-  { name: "Bulawayo Power Station", lat: -20.1406, lng: 28.5856 },
-  { name: "Zimplats Ngezi Mine", lat: -18.6657, lng: 30.3473 },
-  { name: "Gweru Metallurgy Smelter", lat: -19.4500, lng: 29.8167 },
-  { name: "Shurugwi Chrome Pit", lat: -19.6700, lng: 30.0000 },
-  { name: "Harare Gateway Hub", lat: -17.8252, lng: 31.0530 },
-  { name: "Mimosa Mining Shaft", lat: -20.3204, lng: 30.0638 },
-  { name: "Beitbridge Border Logistics", lat: -22.2100, lng: 30.0000 },
-  { name: "Mutare Port Terminal", lat: -18.9727, lng: 32.6708 }
-];
+export const PRE_CODED_LOCATIONS: { name: string; lat: number; lng: number }[] = [];
 
 export const Jobs: React.FC = () => {
   const { jobs, drivers, trucks, addJob, updateJobStatus, deleteJob } = useFleet();
@@ -109,13 +100,13 @@ export const Jobs: React.FC = () => {
     e.preventDefault();
 
     let srcName = sourceName.trim() || 'Custom Mining Site';
-    let sLat = parseFloat(sourceLat) || -18.3647;
-    let sLng = parseFloat(sourceLng) || 26.5000;
+    let sLat = parseFloat(sourceLat) || 0;
+    let sLng = parseFloat(sourceLng) || 0;
     let sDet = sourceDetails.trim();
 
     let dstName = destName.trim() || 'Custom Facility';
-    let dLat = parseFloat(destLat) || -20.1406;
-    let dLng = parseFloat(destLng) || 28.5856;
+    let dLat = parseFloat(destLat) || 0;
+    let dLng = parseFloat(destLng) || 0;
     let dDet = destDetails.trim();
 
     // Persist new locations locally
@@ -171,6 +162,7 @@ export const Jobs: React.FC = () => {
     setIncome(25000);
 
     setShowModal(false);
+    toast.success('Job registered');
   };
 
   return (
@@ -270,101 +262,79 @@ export const Jobs: React.FC = () => {
         <div className="bg-[#101424] border border-zinc-800 p-6 rounded-xl overflow-hidden">
           
           <div className="overflow-x-auto">
-            {filteredJobs.length === 0 ? (
-              <div className="text-center py-20 text-zinc-550 border border-zinc-850 border-dashed rounded bg-zinc-950/20 text-sm font-mono">
-                No transport manifests found matching filters.
-              </div>
-            ) : (
-              <table className="w-full text-left text-xs bg-zinc-950/25 border border-zinc-850 rounded">
-                <thead>
-                  <tr className="border-b border-zinc-800 bg-zinc-900/50 text-zinc-400 font-mono">
-                    <th className="p-3.5 pl-4">Job ID</th>
-                    <th className="p-3.5">Cargo Spec</th>
-                    <th className="p-3.5">Route Corridors</th>
-                    <th className="p-3.5">Assigned Driver</th>
-                    <th className="p-3.5 font-mono">Truck Asset</th>
-                    <th className="p-3.5">Cargo Value</th>
-                    <th className="p-3.5">Execution Status</th>
-                    <th className="p-3.5 text-right pr-6 font-mono">Control</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-850">
-                  {filteredJobs.map(j => (
-                    <tr key={j.id} className="text-zinc-300 hover:bg-zinc-900/10 transition-colors">
-                      <td className="p-3.5 pl-4 font-mono font-black text-orange-400 text-xs">{j.id}</td>
-                      <td className="p-3.5">
-                        <p className="font-bold text-white text-xs">{j.title}</p>
-                        <span className="text-[10px] text-zinc-500 font-semibold">{j.weight} Tons of {j.cargoType}</span>
-                      </td>
-                      <td className="p-3.5">
-                        <div className="flex flex-col gap-0.5 text-xs">
-                          <p className="text-zinc-200 font-medium">From: <span className="text-zinc-400">{j.source}</span></p>
-                          <p className="text-zinc-200 font-medium">To: <span className="text-zinc-400">{j.destination}</span></p>
-                        </div>
-                      </td>
-                      <td className="p-3.5 text-zinc-200 font-medium font-mono text-[11px]">
-                        {j.driverName || (j.driverId ? (drivers.find(d => d.id === j.driverId)?.name || `Captain (${j.driverId})`) : null) || 'Unassigned'}
-                      </td>
-                      <td className="p-3.5">
-                        {(j.truckPlate || (j.truckId ? (trucks.find(t => t.id === j.truckId)?.plateNumber || `Hauler (${j.truckId})`) : null)) ? (
-                          <span className="font-mono bg-zinc-900 py-0.5 px-1.5 border border-zinc-850 rounded text-zinc-300 font-medium uppercase text-[10px]">
-                            {j.truckPlate || (j.truckId ? (trucks.find(t => t.id === j.truckId)?.plateNumber || j.truckId) : null)}
-                          </span>
-                        ) : (
-                          <span className="text-zinc-600 italic">None</span>
-                        )}
-                      </td>
-                      <td className="p-3.5 font-mono text-white text-xs">${j.income.toLocaleString()}</td>
-                      <td className="p-3.5">
-                        <span className={`inline-block px-2.5 py-1 rounded text-[10px] tracking-wide font-mono font-bold ${
-                          j.status === 'Completed' ? 'bg-emerald-500/10 text-emerald-400' :
-                          j.status === 'In Transit' ? 'bg-orange-500/10 text-orange-400 animate-pulse' :
-                          j.status === 'Assigned' ? 'bg-indigo-500/10 text-indigo-400' : 'bg-zinc-800 text-zinc-500'
-                        }`}>{j.status}</span>
-                      </td>
-                      <td className="p-3.5 text-right pr-6">
-                        {confirmDeleteId === j.id ? (
-                          <div className="inline-flex gap-1.5 items-center justify-end">
-                            <span className="text-[9px] text-red-500 font-mono font-bold uppercase mr-1">Purge?</span>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                deleteJob(j.id);
-                                setConfirmDeleteId(null);
-                              }}
-                              className="px-2 py-0.5 bg-red-600 text-white font-mono text-[9px] font-bold rounded cursor-pointer transition-colors hover:bg-red-500"
-                            >
-                              Yes
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setConfirmDeleteId(null);
-                              }}
-                              className="px-1.5 py-0.5 bg-zinc-850 text-zinc-400 font-mono text-[9px] font-bold rounded cursor-pointer hover:bg-zinc-800"
-                            >
-                              No
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setConfirmDeleteId(j.id);
-                            }}
-                            className="px-2 py-1 bg-red-650/10 hover:bg-red-650 hover:bg-red-650 hover:text-white border border-red-500/20 text-red-400 hover:text-zinc-100 font-mono text-[9px] font-bold rounded transition-all cursor-pointer inline-flex items-center gap-1 shadow-sm"
-                            title="Purge Manifest"
-                          >
-                            <Trash2 size={10} />
-                            <span>Delete</span>
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+            <PaginatedTable
+              data={filteredJobs}
+              searchFields={['id', 'title', 'driverName', 'truckPlate', 'source', 'destination']}
+              pageSize={15}
+              keyExtractor={j => j.id}
+              emptyMessage="No transport manifests filed."
+              columns={[
+                { header: 'Job ID', accessor: 'id', sortable: true, className: 'font-mono font-black text-orange-400 text-xs', headerClassName: 'pl-4' },
+                {
+                  header: 'Cargo Spec',
+                  sortable: true,
+                  render: j => (
+                    <div>
+                      <p className="font-bold text-white text-xs">{j.title}</p>
+                      <span className="text-[10px] text-zinc-500 font-semibold">{j.weight} Tons of {j.cargoType}</span>
+                    </div>
+                  )
+                },
+                {
+                  header: 'Route Corridors',
+                  render: j => (
+                    <div className="flex flex-col gap-0.5 text-xs">
+                      <p className="text-zinc-200 font-medium">From: <span className="text-zinc-400">{j.source}</span></p>
+                      <p className="text-zinc-200 font-medium">To: <span className="text-zinc-400">{j.destination}</span></p>
+                    </div>
+                  )
+                },
+                {
+                  header: 'Assigned Driver',
+                  render: j => (
+                    <span className="text-zinc-200 font-medium font-mono text-[11px]">
+                      {j.driverName || (j.driverId ? (drivers.find(d => d.id === j.driverId)?.name || `Captain (${j.driverId})`) : null) || 'Unassigned'}
+                    </span>
+                  )
+                },
+                {
+                  header: 'Truck Asset',
+                  render: j => {
+                    const plate = j.truckPlate || (j.truckId ? (trucks.find(t => t.id === j.truckId)?.plateNumber || j.truckId) : null);
+                    return plate ? (
+                      <span className="font-mono bg-zinc-900 py-0.5 px-1.5 border border-zinc-850 rounded text-zinc-300 font-medium uppercase text-[10px]">{plate}</span>
+                    ) : (<span className="text-zinc-600 italic">None</span>);
+                  }
+                },
+                { header: 'Cargo Value', accessor: 'income', sortable: true, className: 'font-mono text-white text-xs', render: j => <span>${j.income.toLocaleString()}</span> },
+                {
+                  header: 'Execution Status',
+                  sortable: true,
+                  render: j => (
+                    <span className={`inline-block px-2.5 py-1 rounded text-[10px] tracking-wide font-mono font-bold ${j.status === 'Completed' ? 'bg-emerald-500/10 text-emerald-400' : j.status === 'In Transit' ? 'bg-orange-500/10 text-orange-400 animate-pulse' : j.status === 'Assigned' ? 'bg-indigo-500/10 text-indigo-400' : 'bg-zinc-800 text-zinc-500'}`}>{j.status}</span>
+                  )
+                },
+                {
+                  header: 'Control',
+                  headerClassName: 'text-right pr-6',
+                  className: 'text-right pr-6',
+                  render: j => (
+                    confirmDeleteId === j.id ? (
+                      <div className="inline-flex gap-1.5 items-center justify-end">
+                        <span className="text-[9px] text-red-500 font-mono font-bold uppercase mr-1">Purge?</span>
+                        <button onClick={(e) => { e.stopPropagation(); deleteJob(j.id); setConfirmDeleteId(null); toast.success('Job deleted'); }} className="px-2 py-0.5 bg-red-600 text-white font-mono text-[9px] font-bold rounded cursor-pointer transition-colors hover:bg-red-500">Yes</button>
+                        <button onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(null); }} className="px-1.5 py-0.5 bg-zinc-850 text-zinc-400 font-mono text-[9px] font-bold rounded cursor-pointer hover:bg-zinc-800">No</button>
+                      </div>
+                    ) : (
+                      <button onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(j.id); }} className="px-2 py-1 bg-red-650/10 hover:bg-red-650 hover:bg-red-650 hover:text-white border border-red-500/20 text-red-400 hover:text-zinc-100 font-mono text-[9px] font-bold rounded transition-all cursor-pointer inline-flex items-center gap-1 shadow-sm" title="Purge Manifest">
+                        <Trash2 size={10} />
+                        <span>Delete</span>
+                      </button>
+                    )
+                  )
+                },
+              ]}
+            />
           </div>
         </div>
 

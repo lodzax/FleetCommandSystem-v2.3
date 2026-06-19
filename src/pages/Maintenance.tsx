@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { useFleet } from '../context/FleetContext';
 import { Layout } from '../components/NavigationSidebar';
+import { PaginatedTable, Column } from '../components/PaginatedTable';
 import { 
   Wrench, ShieldAlert, CheckCircle, Clock, AlertTriangle, 
   Search, Plus, DollarSign, Calendar, Landmark, Check, X
 } from 'lucide-react';
 import { MaintenanceRecord, MaintenanceStatus } from '../types';
+import toast from 'react-hot-toast';
 
 export const Maintenance: React.FC = () => {
   const { maintenance, trucks, addMaintenanceRecord, updateMaintenanceStatus } = useFleet();
@@ -16,10 +18,10 @@ export const Maintenance: React.FC = () => {
 
   // Form states
   const [truckId, setTruckId] = useState('');
-  const [serviceType, setServiceType] = useState('CAT Engine Diagnostics & Filters Service');
-  const [cost, setCost] = useState(15000);
+  const [serviceType, setServiceType] = useState('');
+  const [cost, setCost] = useState(0);
   const [scheduledDate, setScheduledDate] = useState(new Date().toISOString().split('T')[0]);
-  const [technicianName, setTechnicianName] = useState('Chamu Mudenda');
+  const [technicianName, setTechnicianName] = useState('');
   const [priority, setPriority] = useState<'High' | 'Medium' | 'Low'>('Medium');
   const [notes, setNotes] = useState('');
 
@@ -60,13 +62,14 @@ export const Maintenance: React.FC = () => {
 
     // Reset Form
     setTruckId('');
-    setServiceType('CAT Engine Diagnostics & Filters Service');
-    setCost(15000);
+    setServiceType('');
+    setCost(0);
     setScheduledDate(new Date().toISOString().split('T')[0]);
-    setTechnicianName('Chamu Mudenda');
+    setTechnicianName('');
     setPriority('Medium');
     setNotes('');
     setShowModal(false);
+    toast.success('Service scheduled');
   };
 
   return (
@@ -169,80 +172,61 @@ export const Maintenance: React.FC = () => {
         <div className="bg-[#101424] border border-zinc-800 p-6 rounded-xl overflow-hidden">
           
           <div className="overflow-x-auto">
-            {filteredRecords.length === 0 ? (
-              <div className="text-center py-20 text-zinc-550 border border-zinc-850 border-dashed rounded bg-zinc-950/20 text-xs font-mono">
-                No active service bay records logged in engineering rosters.
-              </div>
-            ) : (
-              <table className="w-full text-left text-xs bg-zinc-950/25 border border-zinc-850 rounded">
-                <thead>
-                  <tr className="border-b border-zinc-800 bg-zinc-900/40 text-zinc-400 font-mono">
-                    <th className="p-3.5 pl-4">Workorder ID</th>
-                    <th className="p-3.5">Asset Code</th>
-                    <th className="p-3.5">Servicing Mechanics</th>
-                    <th className="p-3.5">Cost (USD)</th>
-                    <th className="p-3.5">Scheduled Date</th>
-                    <th className="p-3.5">Risk Level</th>
-                    <th className="p-3.5">Status Label</th>
-                    <th className="p-3.5 pr-4 text-center">Interactive Telemetry Trigger</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-850">
-                  {filteredRecords.map(m => (
-                    <tr key={m.id} className="text-zinc-300 hover:bg-zinc-900/10 transition-colors">
-                      <td className="p-3.5 pl-4 font-mono font-bold text-orange-400">{m.id}</td>
-                      <td className="p-3.5 font-mono text-white text-xs font-black uppercase">{m.truckId}</td>
-                      <td className="p-3.5">
-                        <div className="space-y-0.5">
-                          <p className="font-bold text-white text-xs">{m.serviceType}</p>
-                          <span className="text-[10px] text-zinc-500 font-semibold">Mechanic: {m.technicianName}</span>
-                        </div>
-                      </td>
-                      <td className="p-3.5 font-mono text-emerald-400 font-semibold">${m.cost.toLocaleString()}</td>
-                      <td className="p-3.5 text-zinc-400 font-mono">{m.scheduledDate}</td>
-                      <td className="p-3.5">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold font-mono ${
-                          m.priority === 'High' ? 'bg-red-500/10 text-red-400' :
-                          m.priority === 'Medium' ? 'bg-yellow-500/10 text-yellow-500' :
-                          'bg-zinc-800 text-zinc-400'
-                        }`}>{m.priority}</span>
-                      </td>
-                      <td className="p-3.5">
-                        <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold font-mono ${
-                          m.status === 'Completed' ? 'bg-emerald-500/10 text-emerald-400' :
-                          m.status === 'In Progress' ? 'bg-yellow-500/10 text-yellow-500 animate-pulse' :
-                          'bg-red-500/10 text-zinc-400'
-                        }`}>{m.status}</span>
-                      </td>
-                      <td className="p-3.5 pr-4 text-center">
-                        <div className="flex justify-center gap-1.5">
-                          {m.status === 'Scheduled' && (
-                            <button
-                              onClick={() => updateMaintenanceStatus(m.id, 'In Progress')}
-                              className="px-2 py-1 bg-yellow-500 text-black font-bold text-[10px] font-mono tracking-wide rounded hover:bg-yellow-400 cursor-pointer"
-                            >
-                              Overhaul
-                            </button>
-                          )}
-                          {m.status === 'In Progress' && (
-                            <button
-                              onClick={() => updateMaintenanceStatus(m.id, 'Completed')}
-                              className="px-2.5 py-1 bg-emerald-500 text-black font-extrabold text-[10px] font-mono tracking-wide rounded hover:bg-emerald-400 flex items-center gap-0.5 cursor-pointer"
-                            >
-                              <Check size={11} strokeWidth={3} />
-                              <span>Discharge</span>
-                            </button>
-                          )}
-                          {m.status === 'Completed' && (
-                            <span className="text-zinc-550 font-mono text-[10px] italic">Released Bay</span>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+            <PaginatedTable
+              data={filteredRecords}
+              searchFields={['id', 'truckId', 'serviceType', 'technicianName']}
+              pageSize={15}
+              keyExtractor={m => m.id}
+              emptyMessage="No service bay work orders filed."
+              columns={[
+                { header: 'Workorder ID', accessor: 'id', sortable: true, className: 'font-mono font-bold text-orange-400', headerClassName: 'pl-4' },
+                { header: 'Asset Code', accessor: 'truckId', sortable: true, className: 'font-mono text-white text-xs font-black uppercase' },
+                {
+                  header: 'Servicing Mechanics',
+                  render: m => (
+                    <div className="space-y-0.5">
+                      <p className="font-bold text-white text-xs">{m.serviceType}</p>
+                      <span className="text-[10px] text-zinc-500 font-semibold">Mechanic: {m.technicianName}</span>
+                    </div>
+                  )
+                },
+                { header: 'Cost (USD)', accessor: 'cost', sortable: true, className: 'font-mono text-emerald-400 font-semibold', render: m => <span>${m.cost.toLocaleString()}</span> },
+                { header: 'Scheduled Date', accessor: 'scheduledDate', sortable: true, className: 'text-zinc-400 font-mono' },
+                {
+                  header: 'Risk Level',
+                  sortable: true,
+                  render: m => (
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold font-mono ${m.priority === 'High' ? 'bg-red-500/10 text-red-400' : m.priority === 'Medium' ? 'bg-yellow-500/10 text-yellow-500' : 'bg-zinc-800 text-zinc-400'}`}>{m.priority}</span>
+                  )
+                },
+                {
+                  header: 'Status Label',
+                  sortable: true,
+                  render: m => (
+                    <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold font-mono ${m.status === 'Completed' ? 'bg-emerald-500/10 text-emerald-400' : m.status === 'In Progress' ? 'bg-yellow-500/10 text-yellow-500 animate-pulse' : 'bg-red-500/10 text-zinc-400'}`}>{m.status}</span>
+                  )
+                },
+                {
+                  header: 'Interactive Telemetry Trigger',
+                  headerClassName: 'text-center',
+                  className: 'text-center',
+                  render: m => (
+                    <div className="flex justify-center gap-1.5">
+                      {m.status === 'Scheduled' && (
+                        <button onClick={() => { updateMaintenanceStatus(m.id, 'In Progress'); toast.success('Service started'); }} className="px-2 py-1 bg-yellow-500 text-black font-bold text-[10px] font-mono tracking-wide rounded hover:bg-yellow-400 cursor-pointer">Overhaul</button>
+                      )}
+                      {m.status === 'In Progress' && (
+                        <button onClick={() => { updateMaintenanceStatus(m.id, 'Completed'); toast.success('Service completed'); }} className="px-2.5 py-1 bg-emerald-500 text-black font-extrabold text-[10px] font-mono tracking-wide rounded hover:bg-emerald-400 flex items-center gap-0.5 cursor-pointer">
+                          <Check size={11} strokeWidth={3} />
+                          <span>Discharge</span>
+                        </button>
+                      )}
+                      {m.status === 'Completed' && <span className="text-zinc-550 font-mono text-[10px] italic">Released Bay</span>}
+                    </div>
+                  )
+                },
+              ]}
+            />
           </div>
         </div>
 
@@ -326,7 +310,7 @@ export const Maintenance: React.FC = () => {
                   <input
                     type="text"
                     required
-                    placeholder="e.g., Chamu Mudenda"
+                    placeholder="Technician name"
                     value={technicianName}
                     onChange={(e) => setTechnicianName(e.target.value)}
                     className="w-full bg-[#0c0f1d] border border-zinc-850 p-2.5 rounded text-zinc-200 outline-none focus:border-orange-500"

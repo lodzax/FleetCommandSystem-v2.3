@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { useFleet } from '../context/FleetContext';
+import { api } from '../api';
 import { Layout } from '../components/NavigationSidebar';
 import { UserRole } from '../types';
 import { 
   User, Shield, Activity, Users, Settings, LogOut, CheckCircle, 
-  HelpCircle, Trash, Ban, Mail, RadioTower, Globe, ShieldAlert, Sparkles, X, Plus
+  HelpCircle, Trash, Ban, Mail, RadioTower, Globe, ShieldAlert, Sparkles, X, Plus, KeyRound
 } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 export const Profile: React.FC = () => {
   const { 
@@ -237,6 +239,18 @@ export const Profile: React.FC = () => {
                   </div>
                 </div>
               </div>
+
+              {/* PASSWORD CHANGE */}
+              <div className="bg-zinc-950/20 border border-zinc-850/60 p-5 rounded-lg space-y-4 mt-6">
+                <div>
+                  <h4 className="text-xs font-bold text-zinc-300 uppercase tracking-wider font-mono flex items-center gap-2">
+                    <KeyRound size={14} className="text-orange-500" />
+                    Security & Password
+                  </h4>
+                  <p className="text-[11px] text-zinc-500 mt-0.5 font-sans">Update your login password.</p>
+                </div>
+                <PasswordChangeForm />
+              </div>
             </div>
           )}
 
@@ -250,7 +264,7 @@ export const Profile: React.FC = () => {
 
               <div className="relative border-l border-zinc-800 ml-4 pl-6 space-y-5 max-h-[500px] overflow-y-auto pr-2">
                 {activities.length === 0 ? (
-                  <p className="text-zinc-500 font-mono italic">No simulated action records exist inside temporary memory.</p>
+                  <p className="text-zinc-500 font-mono italic">No activity records found.</p>
                 ) : (
                   activities.map(act => (
                     <div key={act.id} className="relative text-xs">
@@ -279,5 +293,64 @@ export const Profile: React.FC = () => {
       </div>
 
     </Layout>
+  );
+};
+
+const PasswordChangeForm: React.FC = () => {
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPassword !== confirmPassword) {
+      toast.error('New passwords do not match');
+      return;
+    }
+    if (newPassword.length < 6) {
+      toast.error('Password must be at least 6 characters');
+      return;
+    }
+    setLoading(true);
+    try {
+      const result = await api.changePassword(currentPassword, newPassword);
+      if (result.success) {
+        toast.success('Password updated');
+        setCurrentPassword('');
+        setNewPassword('');
+        setConfirmPassword('');
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to change password');
+    }
+    setLoading(false);
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-3 max-w-sm">
+      <div>
+        <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider font-mono mb-1">Current Password</label>
+        <input type="password" required value={currentPassword}
+          onChange={(e) => setCurrentPassword(e.target.value)}
+          className="w-full bg-[#0c0f1d] border border-zinc-850 p-2.5 rounded text-zinc-200 font-mono text-xs" />
+      </div>
+      <div>
+        <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider font-mono mb-1">New Password</label>
+        <input type="password" required value={newPassword} minLength={6}
+          onChange={(e) => setNewPassword(e.target.value)}
+          className="w-full bg-[#0c0f1d] border border-zinc-850 p-2.5 rounded text-zinc-200 font-mono text-xs" />
+      </div>
+      <div>
+        <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider font-mono mb-1">Confirm New Password</label>
+        <input type="password" required value={confirmPassword} minLength={6}
+          onChange={(e) => setConfirmPassword(e.target.value)}
+          className="w-full bg-[#0c0f1d] border border-zinc-850 p-2.5 rounded text-zinc-200 font-mono text-xs" />
+      </div>
+      <button type="submit" disabled={loading}
+        className="px-4 py-2 bg-gradient-to-r from-orange-600 to-amber-500 hover:from-orange-500 hover:to-amber-400 text-black font-extrabold font-mono text-[10.5px] rounded transition-all shadow-lg shadow-orange-500/5 cursor-pointer disabled:opacity-50">
+        {loading ? 'Updating...' : 'Update Password'}
+      </button>
+    </form>
   );
 };

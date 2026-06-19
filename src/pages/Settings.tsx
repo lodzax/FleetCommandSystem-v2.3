@@ -5,6 +5,7 @@ import {
   Palette, RefreshCw, Layers, CheckCircle2, 
   MapPin, Plus, Home, HelpCircle 
 } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 export const Settings: React.FC = () => {
   const { 
@@ -26,15 +27,10 @@ export const Settings: React.FC = () => {
   const [tempLogoText, setTempLogoText] = useState(logoText);
   const [tempLogoEmoji, setTempLogoEmoji] = useState(logoEmoji);
 
-  // Success indicator triggers
-  const [saveStatus, setSaveStatus] = useState<string | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
   const handleBranchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!bName || !bLoc || !bLat || !bLng) {
-      setErrorMessage("Please fill in Name, Location, Latitude, and Longitude.");
-      setTimeout(() => setErrorMessage(null), 4000);
+      toast.error('Please fill in Name, Location, Latitude, and Longitude');
       return;
     }
 
@@ -55,15 +51,13 @@ export const Settings: React.FC = () => {
     setBPhone('');
     setBManager('');
 
-    setSaveStatus("Branch successfully added to operations ledger");
-    setTimeout(() => setSaveStatus(null), 3000);
+    toast.success('Branch registered');
   };
 
   const saveBranding = () => {
     setLogoText(tempLogoText);
     setLogoEmoji(tempLogoEmoji);
-    setSaveStatus("System branding updated successfully");
-    setTimeout(() => setSaveStatus(null), 3000);
+    toast.success('Branding updated');
   };
 
   const THEMES = [
@@ -89,20 +83,6 @@ export const Settings: React.FC = () => {
             </p>
           </div>
         </div>
-
-        {/* Status Messages */}
-        {saveStatus && (
-          <div className="p-4 bg-emerald-500/10 border-l-2 border-emerald-500 rounded text-emerald-400 text-xs flex items-center gap-2 font-mono">
-            <CheckCircle2 size={16} />
-            {saveStatus}
-          </div>
-        )}
-        {errorMessage && (
-          <div className="p-4 bg-red-400/10 border-l-2 border-red-550 rounded text-red-400 text-xs flex items-center gap-2 font-mono">
-            <span className="font-extrabold text-sm">✖</span>
-            {errorMessage}
-          </div>
-        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* THEME & VISUAL SELECTION */}
@@ -205,7 +185,7 @@ export const Settings: React.FC = () => {
                       value={bName}
                       onChange={(e) => setBName(e.target.value)}
                       className="w-full bg-zinc-950 border border-zinc-850 rounded px-2 py-1 text-xs text-white placeholder-zinc-700"
-                      placeholder="Gweru Transit Depot"
+                      placeholder="Branch name"
                     />
                   </div>
 
@@ -217,7 +197,7 @@ export const Settings: React.FC = () => {
                       value={bLoc}
                       onChange={(e) => setBLoc(e.target.value)}
                       className="w-full bg-zinc-950 border border-zinc-850 rounded px-2 py-1 text-xs text-white placeholder-zinc-700"
-                      placeholder="e.g. Gweru, Midlands"
+                      placeholder="Location description"
                     />
                   </div>
 
@@ -231,7 +211,7 @@ export const Settings: React.FC = () => {
                         value={bLat}
                         onChange={(e) => setBLat(e.target.value)}
                         className="w-full bg-zinc-950 border border-zinc-850 rounded px-2 py-1 text-xs text-white font-mono placeholder-zinc-700"
-                        placeholder="-19.45"
+                        placeholder="Latitude"
                       />
                     </div>
                     <div>
@@ -243,7 +223,7 @@ export const Settings: React.FC = () => {
                         value={bLng}
                         onChange={(e) => setBLng(e.target.value)}
                         className="w-full bg-zinc-950 border border-zinc-850 rounded px-2 py-1 text-xs text-white font-mono placeholder-zinc-700"
-                        placeholder="29.81"
+                        placeholder="Longitude"
                       />
                     </div>
                   </div>
@@ -255,7 +235,7 @@ export const Settings: React.FC = () => {
                       value={bPhone}
                       onChange={(e) => setBPhone(e.target.value)}
                       className="w-full bg-zinc-950 border border-zinc-850 rounded px-2 py-1 text-xs text-white placeholder-zinc-700"
-                      placeholder="+263 54 8109"
+                      placeholder="Phone number"
                     />
                   </div>
 
@@ -266,7 +246,7 @@ export const Settings: React.FC = () => {
                       value={bManager}
                       onChange={(e) => setBManager(e.target.value)}
                       className="w-full bg-zinc-950 border border-zinc-850 rounded px-2 py-1 text-xs text-white placeholder-zinc-700"
-                      placeholder="Peter Chigumba"
+                      placeholder="Manager name"
                     />
                   </div>
 

@@ -2,17 +2,19 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useFleet } from '../context/FleetContext';
 import { FuelRequisition } from '../types';
 import { jsPDF } from 'jspdf';
+import { Html5Qrcode } from 'html5-qrcode';
+import toast from 'react-hot-toast';
 
 export const MineazyFuelRedemption: React.FC = () => {
-  const { fuelRequisitions, redeemRequisition, prepaidFuelBalance, activeUser, logout } = useFleet();
+  const { fuelRequisitions, redeemRequisition, prepaidFuelBalance, activeUser, logout, fuelPrices } = useFleet();
 
   const [verifyToken, setVerifyToken] = useState('');
   const [matchedReq, setMatchedReq] = useState<FuelRequisition | null>(null);
-  const [redeemError, setRedeemError] = useState('');
-  const [redeemSuccess, setRedeemSuccess] = useState<string | null>(null);
   const [gasStationName, setGasStationName] = useState('');
+  const [drawdownVoucher, setDrawdownVoucher] = useState('');
   const [actualLitres, setActualLitres] = useState(0);
   const [actualCost, setActualCost] = useState(0);
+  const [actualDispersed, setActualDispersed] = useState(0);
   const [licensePlate, setLicensePlate] = useState('');
   const [attendantSig, setAttendantSig] = useState(() => activeUser?.name || '');
   const [gasStations, setGasStations] = useState<string[]>(() => {
@@ -29,6 +31,52 @@ export const MineazyFuelRedemption: React.FC = () => {
   const [newStation, setNewStation] = useState('');
   const [showMenu, setShowMenu] = useState(false);
   const [showDayEndReport, setShowDayEndReport] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
+  const [scannerError, setScannerError] = useState('');
+
+  const scannerRef = useRef<Html5Qrcode | null>(null);
+
+  const stopScanner = () => {
+    if (scannerRef.current) {
+      scannerRef.current.stop().catch(() => {});
+      scannerRef.current = null;
+    }
+    setShowScanner(false);
+    setScannerError('');
+  };
+
+  const startScanner = async () => {
+    setScannerError('');
+    setShowScanner(true);
+    await new Promise(r => setTimeout(r, 150));
+    try {
+      const scanner = new Html5Qrcode('barcode-scanner');
+      scannerRef.current = scanner;
+      await scanner.start(
+        { facingMode: 'environment' },
+        { fps: 12, qrbox: { width: 250, height: 150 } },
+        (decodedText) => {
+          const cleaned = decodedText.replace(/\D/g, '').slice(0, 6);
+          if (cleaned.length === 6) {
+            stopScanner();
+            handleTokenChange(cleaned);
+          }
+        },
+        () => {}
+      );
+    } catch (err: any) {
+      setScannerError(err?.message || 'Camera access denied or unavailable');
+      scannerRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (scannerRef.current) {
+        scannerRef.current.stop().catch(() => {});
+      }
+    };
+  }, []);
 
   const redeemedReqs = fuelRequisitions.filter(r => r.status === 'Redeemed');
   const vouchersRedeemed = redeemedReqs.length;
@@ -47,23 +95,6 @@ export const MineazyFuelRedemption: React.FC = () => {
     tokenRef.current?.focus();
   }, []);
 
-  useEffect(() => {
-    if (redeemSuccess) {
-      const t = setTimeout(() => {
-        setRedeemSuccess(null);
-        setVerifyToken('');
-        setMatchedReq(null);
-        setActualLitres(0);
-        setActualCost(0);
-        setLicensePlate('');
-        setGasStationName('');
-        setAttendantSig(activeUser?.name || '');
-        tokenRef.current?.focus();
-      }, 4000);
-      return () => clearTimeout(t);
-    }
-  }, [redeemSuccess, activeUser]);
-
   const addGasStation = () => {
     const name = newStation.trim();
     if (!name || gasStations.includes(name)) return;
@@ -77,26 +108,26 @@ export const MineazyFuelRedemption: React.FC = () => {
   const handleTokenChange = (value: string) => {
     const cleaned = value.replace(/\D/g, '').slice(0, 6);
     setVerifyToken(cleaned);
-    setRedeemError('');
     if (cleaned.length === 6) {
       const match = fuelRequisitions.find(r => r.redeemToken === cleaned);
       if (match) {
         if (match.status === 'Redeemed') {
-          setRedeemError(`Already redeemed on ${match.redeemDate} at ${match.redeemedByGasStation}`);
+          toast.error(`Already redeemed on ${match.redeemDate} at ${match.redeemedByGasStation}`);
           setMatchedReq(null);
         } else if (match.status === 'Rejected') {
-          setRedeemError('Voucher was rejected by head office');
+          toast.error('Voucher was rejected by head office');
           setMatchedReq(null);
-        } else if (match.status === 'Pending' || match.status === 'Reviewed' || match.status === 'Verified') {
-          setRedeemError('Voucher has not been fully approved yet');
+        } else if (match.status === 'Pending' || match.status === 'Reviewed') {
+          toast.error('Voucher has not been fully approved yet');
           setMatchedReq(null);
         } else {
           setMatchedReq(match);
           setActualLitres(match.litresRequested);
           setActualCost(match.estimatedCost);
+          setActualDispersed(match.litresRequested);
         }
       } else {
-        setRedeemError('No active voucher found');
+        toast.error('No active voucher found');
         setMatchedReq(null);
       }
     } else {
@@ -165,17 +196,30 @@ export const MineazyFuelRedemption: React.FC = () => {
     e.preventDefault();
     if (!matchedReq) return;
     if (!gasStationName || !attendantSig) {
-      setRedeemError('Fill in gas station and attendant name');
+      toast.error('Fill in gas station and attendant name');
       return;
     }
+    const rate = matchedReq.fuelType === 'Petrol' ? fuelPrices.petrol : fuelPrices.diesel;
     redeemRequisition(matchedReq.id, {
       redeemedByGasStation: gasStationName,
+      redeemedDrawdownVoucher: drawdownVoucher,
       redeemedAttendantSignature: attendantSig,
-      redeemedActualLitres: actualLitres,
-      redeemedActualCost: actualCost,
-      licensePlate
+      redeemedActualLitres: actualDispersed,
+      redeemedActualCost: Math.round(actualDispersed * rate),
+      licensePlate: licensePlate,
     });
-    setRedeemSuccess(`${actualLitres}L dispensed to ${matchedReq.truckPlate}. Plate: ${licensePlate}`);
+    toast.success(`${actualDispersed}L dispensed to ${matchedReq.truckPlate}`);
+    setTimeout(() => {
+      setVerifyToken('');
+      setMatchedReq(null);
+      setActualLitres(0);
+      setActualCost(0);
+      setLicensePlate('');
+      setGasStationName('');
+      setDrawdownVoucher('');
+      setAttendantSig(activeUser?.name || '');
+      tokenRef.current?.focus();
+    }, 2000);
   };
 
   return (
@@ -311,13 +355,6 @@ export const MineazyFuelRedemption: React.FC = () => {
 
       {/* Main content */}
       <div className="px-4 py-4 max-w-lg mx-auto space-y-4">
-        {/* Success banner */}
-        {redeemSuccess && (
-          <div className="bg-emerald-600/20 border border-emerald-500/30 rounded-xl p-4 text-emerald-400 text-center text-sm font-bold animate-pulse">
-            {redeemSuccess}
-          </div>
-        )}
-
         {/* Token input */}
         <div className="bg-[#0c0f1d] border border-zinc-800 rounded-xl p-5">
           <label className="block text-zinc-500 text-[10px] uppercase tracking-wider mb-2 text-center">
@@ -335,15 +372,41 @@ export const MineazyFuelRedemption: React.FC = () => {
             className="w-full text-center text-3xl tracking-[0.5em] bg-zinc-950 border-2 border-zinc-700 rounded-xl py-4 text-yellow-400 font-black outline-none focus:border-orange-500 transition-colors"
             autoFocus
           />
-          {redeemError && (
-            <p className="text-red-400 text-[11px] mt-2 text-center">{redeemError}</p>
-          )}
-          {!matchedReq && !redeemError && (
+          <button
+            onClick={startScanner}
+            className="mt-3 w-full py-3 bg-orange-600 hover:bg-orange-500 text-black font-black text-sm rounded-xl uppercase tracking-wider cursor-pointer transition-colors active:scale-[0.98]"
+          >
+            SCAN BARCODE
+          </button>
+          {!matchedReq && (
             <p className="text-zinc-600 text-[10px] mt-2 text-center">
               Point barcode scanner at QR code or type token manually
             </p>
           )}
         </div>
+
+        {/* Camera scanner overlay */}
+        {showScanner && (
+          <div className="fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center" onClick={stopScanner}>
+            <div className="w-full max-w-sm mx-auto p-4" onClick={e => e.stopPropagation()}>
+              <div className="bg-[#0c0f1d] border border-zinc-800 rounded-xl p-4 space-y-3">
+                <p className="text-zinc-400 text-[11px] text-center uppercase tracking-wider">
+                  Point camera at barcode
+                </p>
+                <div id="barcode-scanner" className="w-full aspect-video bg-black rounded-lg overflow-hidden" />
+                {scannerError && (
+                  <p className="text-red-400 text-[10px] text-center">{scannerError}</p>
+                )}
+                <button
+                  onClick={stopScanner}
+                  className="w-full py-3 bg-zinc-800 hover:bg-zinc-700 text-white font-bold text-sm rounded-xl uppercase tracking-wider cursor-pointer transition-colors"
+                >
+                  CANCEL
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Matched voucher */}
         {matchedReq && (
@@ -380,18 +443,21 @@ export const MineazyFuelRedemption: React.FC = () => {
 
             {/* Redemption form */}
             <form onSubmit={handleRedeem} className="space-y-4">
-              <div className="grid grid-cols-3 gap-3">
+              <div className="bg-zinc-950/50 rounded-lg p-3 text-[11px] text-zinc-400 font-mono flex justify-between">
+                <span>Requested: <strong className="text-white">{actualLitres}L</strong></span>
+                <span>Rate: <strong className="text-white">${(matchedReq.fuelType === 'Petrol' ? fuelPrices.petrol : fuelPrices.diesel).toFixed(2)}/L</strong></span>
+              </div>
+              <div>
+                <label className="block text-zinc-500 text-[9px] uppercase font-bold mb-1">Actual Qty Dispersed (L)</label>
+                <input type="number" min="0" step="0.1" required value={actualDispersed}
+                  onChange={(e) => setActualDispersed(parseFloat(e.target.value) || 0)}
+                  className="w-full bg-zinc-950 border-2 border-orange-500/50 focus:border-orange-400 rounded-lg px-3 py-3 text-white text-sm text-center font-bold" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-zinc-500 text-[9px] uppercase font-bold mb-1">Litres</label>
-                  <input type="number" required value={actualLitres}
-                    onChange={(e) => setActualLitres(parseInt(e.target.value) || 0)}
-                    className="w-full bg-zinc-950 border-2 border-zinc-700 rounded-lg px-3 py-3 text-white text-sm text-center font-bold" />
-                </div>
-                <div>
-                  <label className="block text-zinc-500 text-[9px] uppercase font-bold mb-1">Cost ($)</label>
-                  <input type="number" required value={actualCost}
-                    onChange={(e) => setActualCost(parseInt(e.target.value) || 0)}
-                    className="w-full bg-zinc-950 border-2 border-zinc-700 rounded-lg px-3 py-3 text-white text-sm text-center font-bold" />
+                  <label className="block text-zinc-500 text-[9px] uppercase font-bold mb-1">Est. Cost ($)</label>
+                  <input type="number" value={Math.round(actualDispersed * (matchedReq.fuelType === 'Petrol' ? fuelPrices.petrol : fuelPrices.diesel))} readOnly
+                    className="w-full bg-zinc-900 border-2 border-zinc-600 rounded-lg px-3 py-3 text-zinc-400 text-sm text-center font-bold cursor-not-allowed" />
                 </div>
                 <div>
                   <label className="block text-zinc-500 text-[9px] uppercase font-bold mb-1">License Plate</label>
@@ -426,6 +492,14 @@ export const MineazyFuelRedemption: React.FC = () => {
                     </button>
                   </div>
                 )}
+              </div>
+
+              <div>
+                <label className="block text-zinc-500 text-[9px] uppercase font-bold mb-1">Drawdown Voucher #</label>
+                <input type="text" required value={drawdownVoucher}
+                  onChange={(e) => setDrawdownVoucher(e.target.value)}
+                  className="w-full bg-zinc-950 border-2 border-zinc-700 rounded-lg px-3 py-3 text-white text-sm"
+                  placeholder="e.g. DV-2024-001" />
               </div>
 
               <div>

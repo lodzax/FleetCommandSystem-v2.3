@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { useFleet } from '../context/FleetContext';
 import { Layout } from '../components/NavigationSidebar';
+import { PaginatedTable, Column } from '../components/PaginatedTable';
 import { 
   FileText, Truck as TruckIcon, CheckCircle2, Clock, AlertTriangle, 
   Search, SlidersHorizontal, Plus, ArrowLeftRight, X, Layers,
   Building, Calendar, MessageSquare, Clipboard, FileSpreadsheet, RotateCcw
 } from 'lucide-react';
 import { DispatchRecord, StockMovement } from '../types';
+import toast from 'react-hot-toast';
 
 export const Dispatch: React.FC = () => {
   const { 
@@ -46,12 +48,14 @@ export const Dispatch: React.FC = () => {
     setDispatches(prev => prev.map(item => 
       item.id === id ? { ...item, status: newStatus } : item
     ));
+    toast.success(`Dispatch set to ${newStatus}`);
   };
 
   const handleUpdateTransferStatus = (id: string, newStatus: 'Pending' | 'In Transit' | 'Completed') => {
     setStockMovements(prev => prev.map(item => 
       item.id === id ? { ...item, status: newStatus } : item
     ));
+    toast.success(`Transfer set to ${newStatus}`);
   };
 
   // Dispatch creation
@@ -62,7 +66,7 @@ export const Dispatch: React.FC = () => {
     let driverName = '';
     let dId = selectedDriverId;
     if (selectedDriverId === 'custom') {
-      driverName = customDriverName.trim() || 'Temporary Operator';
+      driverName = customDriverName.trim() || 'Custom Operator';
       dId = 'DRV-' + Math.floor(100 + Math.random() * 900);
     } else {
       const match = drivers.find(d => d.id === selectedDriverId);
@@ -73,11 +77,11 @@ export const Dispatch: React.FC = () => {
     let truckPlate = '';
     let tId = selectedTruckId;
     if (selectedTruckId === 'custom') {
-      truckPlate = (customTruckPlate.trim() || 'TRK-ZIM-001').toUpperCase();
+      truckPlate = customTruckPlate.trim().toUpperCase();
       tId = 'TRK-' + Math.floor(100 + Math.random() * 900);
     } else {
       const match = trucks.find(t => t.id === selectedTruckId);
-      truckPlate = match ? match.plateNumber : 'TRK-ZIM-000';
+      truckPlate = match ? match.plateNumber : 'TRK-UNKNOWN';
     }
 
     // Determine Destination
@@ -86,7 +90,7 @@ export const Dispatch: React.FC = () => {
       destination = customDestination.trim() || 'Custom Facility Site';
     } else {
       const match = branches.find(b => b.id === selectedDestinationBranch);
-      destination = match ? match.name : (customDestination.trim() || 'Bulawayo Depot');
+      destination = match ? match.name : (customDestination.trim() || 'Custom Destination');
     }
 
     const newRec: DispatchRecord = {
@@ -118,6 +122,7 @@ export const Dispatch: React.FC = () => {
     setNotes('');
 
     setShowDispatchModal(false);
+    toast.success('Dispatch registered');
   };
 
   // Stock Movement Transfer creation
@@ -142,6 +147,7 @@ export const Dispatch: React.FC = () => {
     setTfItemsCount(0);
 
     setShowTransferModal(false);
+    toast.success('Transfer registered');
   };
 
   // Helper selectors calculation
@@ -165,7 +171,7 @@ export const Dispatch: React.FC = () => {
 
   // Top metric card details
   const activeDispatchesCount = dispatches.filter(d => d.status === 'In Transit').length;
-  const trucksAvailableCount = trucks.filter(t => t.status === 'Idle').length || 4;
+  const trucksAvailableCount = trucks.filter(t => t.status === 'Idle').length;
   const deliveriesCompletedCount = dispatches.filter(d => d.status === 'Delivered').length;
   const pendingDeliveriesCount = dispatches.filter(d => d.status === 'Pending').length;
 
@@ -294,87 +300,81 @@ export const Dispatch: React.FC = () => {
             </div>
 
             {/* REGISTER LEDGER TABLE */}
-            <div className="overflow-x-auto rounded-lg border border-zinc-850 bg-zinc-950/20">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-zinc-950/40 border-b border-zinc-850 font-mono text-[10px] text-zinc-500 uppercase tracking-wider">
-                    <th className="p-3.5 font-bold">Log Details</th>
-                    <th className="p-3.5 font-bold">Crew & Platform</th>
-                    <th className="p-3.5 font-bold">Route Destination</th>
-                    <th className="p-3.5 font-bold">Payload Manifest</th>
-                    <th className="p-3.5 font-bold text-center">Operational Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-900">
-                  {filteredDispatches.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="p-10 text-center font-mono text-zinc-500">
-                        No official dispatch manifests matching current audit criteria.
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredDispatches.map(item => (
-                      <tr key={item.id} className="hover:bg-[#121625]/60 transition-colors">
-                        
-                        <td className="p-3.5 font-mono">
-                          <p className="font-bold text-orange-400">{item.id}</p>
-                          <div className="flex items-center gap-1.5 text-[10px] text-zinc-500 mt-0.5">
-                            <Calendar size={10} />
-                            <span>{item.date}</span>
-                          </div>
-                        </td>
+            <PaginatedTable
+              data={filteredDispatches}
+              searchFields={['id', 'driverName', 'truckPlate', 'destination', 'itemDescription']}
+              pageSize={15}
+              keyExtractor={item => item.id}
+              emptyMessage="No official dispatch manifests matching current audit criteria."
+              columns={[
+                {
+                  header: 'Log Details',
+                  render: item => (
+                    <div className="font-mono">
+                      <p className="font-bold text-orange-400">{item.id}</p>
+                      <div className="flex items-center gap-1.5 text-[10px] text-zinc-500 mt-0.5">
+                        <Calendar size={10} />
+                        <span>{item.date}</span>
+                      </div>
+                    </div>
+                  )
+                },
+                {
+                  header: 'Crew & Platform',
+                  render: item => (
+                    <div>
+                      <p className="font-semibold text-zinc-200">{item.driverName}</p>
+                      <p className="text-[10px] font-mono text-zinc-500 mt-0.5 uppercase tracking-tight">{item.truckPlate}</p>
+                    </div>
+                  )
+                },
+                {
+                  header: 'Route Destination',
+                  render: item => (
+                    <div>
+                      <p className="font-semibold text-zinc-200 truncate max-w-[150px]" title={item.destination}>{item.destination}</p>
+                      {item.notes && <p className="text-[10px] text-zinc-500 italic mt-0.5 truncate max-w-[140px]" title={item.notes}>"{item.notes}"</p>}
+                    </div>
+                  )
+                },
+                {
+                  header: 'Payload Manifest',
+                  render: item => (
+                    <div className="font-mono">
+                      <p className="text-zinc-200 font-semibold truncate max-w-[130px]">{item.itemDescription}</p>
+                      <span className="text-[10px] bg-zinc-900 text-zinc-400 px-1.5 py-0.5 rounded mt-1 inline-block">{item.quantity}</span>
+                    </div>
+                  )
+                },
+                {
+                  header: 'Operational Status',
+                  className: 'text-center',
+                  headerClassName: 'text-center',
+                  render: item => (
+                    <div className="flex flex-col items-center gap-1.5">
+                      <select
+                        value={item.status}
+                        onChange={(e) => handleUpdateStatus(item.id, e.target.value as any)}
+                        className={`p-1 px-1.5 rounded text-[10px] font-mono font-bold outline-none cursor-pointer border ${
+                          item.status === 'Completed' || item.status === 'Delivered'
+                            ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                            : item.status === 'In Transit'
+                            ? 'bg-orange-500/10 border-orange-500/20 text-orange-400 animate-pulse'
+                            : 'bg-zinc-900 border-zinc-800 text-zinc-400'
+                        }`}
+                      >
+                        <option value="Pending">🕒 Pending</option>
+                        <option value="In Transit">🚚 In Transit</option>
+                        <option value="Delivered">✅ Delivered</option>
+                      </select>
+                      <span className="text-[9px] text-zinc-500 font-mono">Instant Dispatch Sync</span>
+                    </div>
+                  )
+                },
+              ]}
+            />
 
-                        <td className="p-3.5">
-                          <p className="font-semibold text-zinc-200">{item.driverName}</p>
-                          <p className="text-[10px] font-mono text-zinc-500 mt-0.5 uppercase tracking-tight">{item.truckPlate}</p>
-                        </td>
-
-                        <td className="p-3.5">
-                          <p className="font-semibold text-zinc-200 truncate max-w-[150px]" title={item.destination}>
-                            {item.destination}
-                          </p>
-                          {item.notes && (
-                            <p className="text-[10px] text-zinc-500 italic mt-0.5 truncate max-w-[140px]" title={item.notes}>
-                              "{item.notes}"
-                            </p>
-                          )}
-                        </td>
-
-                        <td className="p-3.5 font-mono">
-                          <p className="text-zinc-200 font-semibold truncate max-w-[130px]">{item.itemDescription}</p>
-                          <span className="text-[10px] bg-zinc-900 text-zinc-400 px-1.5 py-0.5 rounded mt-1 inline-block">{item.quantity}</span>
-                        </td>
-
-                        <td className="p-3.5 text-center">
-                          <div className="flex flex-col items-center gap-1.5">
-                            {/* LIVE DELIVERY CONFIRMATION SELECT SWITCH */}
-                            <select
-                              value={item.status}
-                              onChange={(e) => handleUpdateStatus(item.id, e.target.value as any)}
-                              className={`p-1 px-1.5 rounded text-[10px] font-mono font-bold outline-none cursor-pointer border ${
-                                item.status === 'Completed' || item.status === 'Delivered'
-                                  ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
-                                  : item.status === 'In Transit'
-                                  ? 'bg-orange-500/10 border-orange-500/20 text-orange-400 animate-pulse'
-                                  : 'bg-zinc-900 border-zinc-800 text-zinc-400'
-                              }`}
-                            >
-                              <option value="Pending">🕒 Pending</option>
-                              <option value="In Transit">🚚 In Transit</option>
-                              <option value="Delivered">✅ Delivered</option>
-                            </select>
-                            <span className="text-[9px] text-zinc-500 font-mono">Instant Dispatch Sync</span>
-                          </div>
-                        </td>
-
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {/* MASS REGISTER RESET RE-SEED LOGS */}
+            {/* BULK REGISTRATION RESET */}
             <div className="pt-2 flex justify-end">
               <button
                 onClick={() => {
@@ -383,6 +383,7 @@ export const Dispatch: React.FC = () => {
                     setStockMovements([]);
                     localStorage.setItem('fc_dispatch_records', JSON.stringify([]));
                     localStorage.setItem('fc_stock_movements', JSON.stringify([]));
+                    toast.success('Register reset');
                   }
                 }}
                 className="text-[10px] hover:text-orange-400 text-zinc-500 flex items-center gap-1 font-mono hover:underline"
@@ -524,7 +525,7 @@ export const Dispatch: React.FC = () => {
                         <input
                           type="text"
                           required
-                          placeholder="e.g. Moses Shumba"
+                          placeholder="Driver name"
                           value={customDriverName}
                           onChange={(e) => setCustomDriverName(e.target.value)}
                           className="w-full bg-[#0c0f1d] border border-zinc-850 p-2 rounded text-zinc-200 outline-none focus:border-orange-500 text-xs"
@@ -555,7 +556,7 @@ export const Dispatch: React.FC = () => {
                         <input
                           type="text"
                           required
-                          placeholder="e.g. TRK-ZIM-110A"
+                          placeholder="Truck plate number"
                           value={customTruckPlate}
                           onChange={(e) => setCustomTruckPlate(e.target.value)}
                           className="w-full bg-[#0c0f1d] border border-zinc-850 p-2 rounded text-zinc-200 outline-none focus:border-orange-500 font-mono text-xs uppercase"

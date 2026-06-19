@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { useFleet } from '../context/FleetContext';
 import { Layout } from '../components/NavigationSidebar';
+import { PaginatedTable, Column } from '../components/PaginatedTable';
 import { Plus, Search, Star, Phone, Mail, FileCheck2, UserCheck, Shield, X, Award, Truck as TruckIcon, Trash2, Pencil } from 'lucide-react';
 import { Driver, DriverStatus } from '../types';
 import { compressAndGetBase64 } from '../utils/compress';
+import toast from 'react-hot-toast';
 
 export const Drivers: React.FC = () => {
   const { drivers, trucks, addDriver, updateDriver, updateDriverStatus, assignDriverToTruck, deleteDriver } = useFleet();
@@ -67,6 +69,7 @@ export const Drivers: React.FC = () => {
     setEnrollTruckId('');
     setIsVerified(true);
     setShowAddModal(false);
+    toast.success('Driver enrolled');
   };
 
   const handleTruckAssignment = (e: React.FormEvent) => {
@@ -75,6 +78,7 @@ export const Drivers: React.FC = () => {
 
     assignDriverToTruck(assignTruckId, selectedDriver.id);
     setAssignTruckId('');
+    toast.success('Truck assigned to driver');
     
     // Refresh detailed panel selection state
     const dId = selectedDriver.id;
@@ -104,6 +108,7 @@ export const Drivers: React.FC = () => {
     });
     setSelectedDriver(prev => prev ? { ...prev, name: editName, licenseClass: editLicenseClass, phone: editPhone, email: editEmail, idNumber: editIdNumber } : null);
     setShowEditModal(false);
+    toast.success('Driver details updated');
   };
 
   const selectedDriverTruck = selectedDriver ? trucks.find(t => t.id === selectedDriver.assignedTruckId) : null;
@@ -144,86 +149,69 @@ export const Drivers: React.FC = () => {
               LICENSED STAFF DIRECTORY ({filteredDrivers.length})
             </h3>
 
-            <div className="overflow-x-auto">
-              {filteredDrivers.length === 0 ? (
-                <div className="text-center py-16 text-zinc-500 font-medium">No personnel registered in control systems.</div>
-              ) : (
-                <table className="w-full text-left text-xs bg-zinc-950/20 border border-zinc-850 rounded">
-                  <thead>
-                    <tr className="border-b border-zinc-800 bg-zinc-900/40 text-zinc-400 font-mono">
-                      <th className="p-3 pl-4">Operator ID</th>
-                      <th className="p-3">Staff Member</th>
-                      <th className="p-3">License Class</th>
-                      <th className="p-3">Trips Completed</th>
-                      <th className="p-3">Operations Rating</th>
-                      <th className="p-3 pr-4">Active Telemetry</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-zinc-850">
-                    {filteredDrivers.map(d => {
-                      const isSelected = selectedDriver?.id === d.id;
-                      const activeTruck = d.assignedTruckId ? trucks.find(t => t.id === d.assignedTruckId) : null;
-
-                      return (
-                        <tr 
-                          key={d.id} 
-                          onClick={() => setSelectedDriver(d)}
-                          className={`cursor-pointer transition-colors text-zinc-300 hover:bg-zinc-900/40 ${
-                            isSelected ? 'bg-orange-500/5 hover:bg-orange-500/5 border-l-2 border-orange-500' : ''
-                          }`}
-                        >
-                          <td className="p-3 pl-4 font-mono text-orange-400 font-semibold">{d.id}</td>
-                          <td className="p-3">
-                            <div className="flex items-center gap-2.5">
-                              <div className="h-7 w-7 rounded bg-zinc-900 border border-zinc-800 flex items-center justify-center font-bold font-mono text-[10px] text-zinc-400 overflow-hidden">
-                                {d.avatar ? (
-                                  <img src={d.avatar} alt={d.name} className="h-full w-full object-cover" />
-                                ) : (
-                                  <span>{d.name.substring(0, 2).toUpperCase()}</span>
-                                )}
-                              </div>
-                              <div>
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <p className="font-bold text-white text-xs">{d.name}</p>
-                                  {d.isVerified && (
-                                    <span className="px-1 py-0.2 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[8.5px] font-bold rounded flex items-center gap-0.5 font-mono">
-                                      <Shield size={8} className="fill-emerald-400/20" /> VERIFIED
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="flex gap-2 text-[10px] text-zinc-500 font-mono mt-0.5">
-                                  <span>ID: {d.idNumber || 'N/A'}</span>
-                                  <span>•</span>
-                                  <span>{d.email}</span>
-                                </div>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="p-3 text-zinc-400">{d.licenseClass}</td>
-                          <td className="p-3 font-mono">{d.tripsCompleted}</td>
-                          <td className="p-3 font-mono">
-                            <div className="flex items-center gap-1">
-                              <Star size={12} className="text-yellow-500 fill-yellow-500" />
-                              <span className="font-bold text-white">{d.rating.toFixed(1)}</span>
-                            </div>
-                          </td>
-                          <td className="p-3 pr-4">
-                            <span className={`inline-block px-2 py-0.5 rounded text-[9px] font-semibold font-mono ${
-                              d.status === 'On Route' ? 'bg-orange-500/10 text-orange-400' :
-                              d.status === 'Active' ? 'bg-emerald-500/10 text-emerald-400' :
-                              'bg-zinc-800 text-zinc-450'
-                            }`}>{d.status}</span>
-                            {activeTruck && (
-                              <p className="text-[9px] text-zinc-500 font-mono font-bold mt-1 uppercase">Asset: {activeTruck.plateNumber}</p>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              )}
-            </div>
+            <PaginatedTable
+              data={drivers}
+              searchFields={['name', 'id', 'email', 'idNumber', 'licenseClass']}
+              pageSize={15}
+              keyExtractor={d => d.id}
+              onRowClick={d => setSelectedDriver(d)}
+              rowClassName={d => selectedDriver?.id === d.id ? 'bg-orange-500/5 border-l-2 border-orange-500' : undefined}
+              columns={[
+                { header: 'Operator ID', accessor: 'id', sortable: true, className: 'font-mono text-orange-400 font-semibold', headerClassName: 'pl-4', filterable: true },
+                {
+                  header: 'Staff Member',
+                  sortable: true,
+                  render: d => (
+                    <div className="flex items-center gap-2.5">
+                      <div className="h-7 w-7 rounded bg-zinc-900 border border-zinc-800 flex items-center justify-center font-bold font-mono text-[10px] text-zinc-400 overflow-hidden shrink-0">
+                        {d.avatar ? <img src={d.avatar} alt={d.name} className="h-full w-full object-cover" /> : <span>{d.name.substring(0, 2).toUpperCase()}</span>}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <p className="font-bold text-white text-xs">{d.name}</p>
+                          {d.isVerified && (
+                            <span className="px-1 py-0.2 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[8.5px] font-bold rounded flex items-center gap-0.5 font-mono">
+                              <Shield size={8} className="fill-emerald-400/20" /> VERIFIED
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex gap-2 text-[10px] text-zinc-500 font-mono mt-0.5">
+                          <span>ID: {d.idNumber || 'N/A'}</span>
+                          <span>•</span>
+                          <span>{d.email}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                },
+                { header: 'License Class', accessor: 'licenseClass', sortable: true, filterable: true, filterOptions: [{ label: 'Class 1', value: 'Class 1' }, { label: 'Class 2', value: 'Class 2' }, { label: 'Class 3', value: 'Class 3' }, { label: 'Class 4', value: 'Class 4' }, { label: 'Class 5', value: 'Class 5' }] },
+                { header: 'Trips Completed', accessor: 'tripsCompleted', sortable: true, className: 'font-mono' },
+                {
+                  header: 'Operations Rating',
+                  sortable: true,
+                  className: 'font-mono',
+                  render: d => (
+                    <div className="flex items-center gap-1">
+                      <Star size={12} className="text-yellow-500 fill-yellow-500" />
+                      <span className="font-bold text-white">{d.rating.toFixed(1)}</span>
+                    </div>
+                  )
+                },
+                {
+                  header: 'Active Telemetry',
+                  sortable: true,
+                  render: d => {
+                    const activeTruck = d.assignedTruckId ? trucks.find(t => t.id === d.assignedTruckId) : null;
+                    return (
+                      <div>
+                        <span className={`inline-block px-2 py-0.5 rounded text-[9px] font-semibold font-mono ${d.status === 'On Route' ? 'bg-orange-500/10 text-orange-400' : d.status === 'Active' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-zinc-800 text-zinc-450'}`}>{d.status}</span>
+                        {activeTruck && <p className="text-[9px] text-zinc-500 font-mono font-bold mt-1 uppercase">Asset: {activeTruck.plateNumber}</p>}
+                      </div>
+                    );
+                  }
+                },
+              ]}
+            />
           </div>
 
           {/* RIGHT PANEL: SELECTED INTERFACE CARD PANEL */}
@@ -311,6 +299,7 @@ export const Drivers: React.FC = () => {
                           updateDriverStatus(selectedDriver.id, st);
                           // instant update detailed view element
                           setSelectedDriver(prev => ({ ...prev!, status: st }));
+                          toast.success(`Status set to ${st}`);
                         }}
                         className={`flex-1 py-1.5 rounded font-mono text-[10px] font-semibold transition-all cursor-pointer border ${
                           selectedDriver.status === st
@@ -333,6 +322,7 @@ export const Drivers: React.FC = () => {
                         onClick={() => {
                           assignDriverToTruck(selectedDriver.assignedTruckId!, null);
                           setSelectedDriver(prev => ({ ...prev!, assignedTruckId: null }));
+                          toast.success('Truck unpaired');
                         }}
                         className="text-[10px] text-red-500 hover:text-red-400 font-bold font-mono"
                       >
@@ -397,6 +387,7 @@ export const Drivers: React.FC = () => {
                               deleteDriver(selectedDriver.id);
                               setSelectedDriver(null);
                               setConfirmDeleteId(null);
+                              toast.success('Driver deleted');
                             }}
                             className="flex-1 py-1.5 bg-red-650 hover:bg-red-605 text-white font-mono text-[10px] font-black rounded cursor-pointer text-center"
                           >

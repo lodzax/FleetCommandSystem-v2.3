@@ -1,5 +1,6 @@
 import React from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { Toaster } from 'react-hot-toast';
 import { FleetProvider, useFleet } from './context/FleetContext';
 import { Dashboard } from './pages/Dashboard';
 import { Dispatch } from './pages/Dispatch';
@@ -95,6 +96,31 @@ function AppRoutes() {
 export default function App() {
   return (
     <FleetProvider>
+      <Toaster
+        position="top-right"
+        toastOptions={{
+          duration: 3000,
+          style: {
+            background: '#121625',
+            color: '#e4e4e7',
+            border: '1px solid #27272a',
+            fontFamily: 'monospace',
+            fontSize: '12px',
+          },
+          success: {
+            iconTheme: {
+              primary: '#22c55e',
+              secondary: '#121625',
+            },
+          },
+          error: {
+            iconTheme: {
+              primary: '#ef4444',
+              secondary: '#121625',
+            },
+          },
+        }}
+      />
       <AppRoutes />
     </FleetProvider>
   );

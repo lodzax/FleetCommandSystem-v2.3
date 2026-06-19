@@ -3,6 +3,7 @@ import { useFleet } from '../context/FleetContext';
 import { Key, Mail, User, ArrowRight, Lock, CheckCircle2 } from 'lucide-react';
 import { api, setToken } from '../api';
 import logoImg from '../../assets/logo.png';
+import toast from 'react-hot-toast';
 
 export const Auth: React.FC = () => {
   const { users, addUser, activeUser, setActiveUser } = useFleet();
@@ -11,13 +12,10 @@ export const Auth: React.FC = () => {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
     setLoading(true);
     
     try {
@@ -26,40 +24,39 @@ export const Auth: React.FC = () => {
       if (result.success && result.user) {
         setToken(result.token);
         setActiveUser(result.user);
-        setSuccess(`Welcome back, ${result.user.name}!`);
+        toast.success(`Welcome back, ${result.user.name}!`);
         setLoading(false);
         return;
       }
     } catch {
-      // API unavailable – fall back to local mockData
+      // API unavailable — fall back to local state
     }
 
     // Offline fallback: match against local users (plaintext)
     const matched = users.find(u => u.email.toLowerCase() === email.toLowerCase() && u.password === password);
     if (!matched) {
-      setError('Invalid email or password combination.');
+      toast.error('Invalid email or password');
       setLoading(false);
       return;
     }
     
     if (matched.status === 'Suspended') {
-      setError('Your account access has been suspended by an administrator.');
+      toast.error('Account suspended by administrator');
       setLoading(false);
       return;
     }
 
     setActiveUser(matched);
-    setSuccess(`Welcome back, ${matched.name}!`);
+    toast.success(`Welcome back, ${matched.name}!`);
     setLoading(false);
   };
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
     setLoading(true);
     
     if (!name || !email || !password) {
-      setError('Please fill in all registration fields.');
+      toast.error('Please fill in all fields');
       setLoading(false);
       return;
     }
@@ -67,7 +64,7 @@ export const Auth: React.FC = () => {
     // Check duplicate email locally first
     const exists = users.find(u => u.email.toLowerCase() === email.toLowerCase());
     if (exists) {
-      setError('Email address is already registered in the operations center.');
+      toast.error('Email already registered');
       setLoading(false);
       return;
     }
@@ -87,7 +84,7 @@ export const Auth: React.FC = () => {
       } catch {
         // Login after signup failed — stay on auth page with success message
       }
-      setSuccess(result.message || 'Registration submitted! Pending admin approval.');
+      toast.success(result.message || 'Registration submitted! Pending admin approval.');
       setName('');
       setEmail('');
       setPassword('');
@@ -136,7 +133,7 @@ export const Auth: React.FC = () => {
         {/* Auth Toggle Tabs */}
         <div className="grid grid-cols-2 bg-[#060914] p-1 rounded-lg border border-zinc-950">
           <button
-            onClick={() => { setIsSignUp(false); setError(''); }}
+            onClick={() => setIsSignUp(false)}
             className={`py-2 text-xs font-bold font-mono tracking-wider rounded-md transition-all cursor-pointer ${
               !isSignUp ? 'bg-orange-600 text-black shadow' : 'text-zinc-400 hover:text-zinc-200'
             }`}
@@ -144,7 +141,7 @@ export const Auth: React.FC = () => {
             LOG IN
           </button>
           <button
-            onClick={() => { setIsSignUp(true); setError(''); }}
+            onClick={() => setIsSignUp(true)}
             className={`py-2 text-xs font-bold font-mono tracking-wider rounded-md transition-all cursor-pointer ${
               isSignUp ? 'bg-orange-600 text-black shadow' : 'text-zinc-400 hover:text-zinc-200'
             }`}
@@ -152,19 +149,6 @@ export const Auth: React.FC = () => {
             SIGN UP
           </button>
         </div>
-
-        {/* Message indicators */}
-        {error && (
-          <p className="p-3 bg-red-500/10 border-l-2 border-red-500 rounded text-red-400 text-xs font-mono font-bold">
-            ⚠ {error}
-          </p>
-        )}
-        {success && (
-          <div className="p-3 bg-emerald-500/10 border-l-2 border-emerald-500 rounded text-emerald-400 text-xs font-mono font-bold flex items-center gap-2">
-            <CheckCircle2 size={14} />
-            <span>{success}</span>
-          </div>
-        )}
 
         {/* FORMS */}
         {!isSignUp ? (
@@ -176,7 +160,7 @@ export const Auth: React.FC = () => {
                 <input
                   type="email"
                   required
-                  placeholder="name@fleetcommand.co.zw"
+                  placeholder="email@example.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full bg-[#060914] border border-zinc-900 focus:border-orange-500/55 p-2.5 rounded text-xs outline-none text-zinc-200 pl-9 font-mono"
@@ -220,7 +204,7 @@ export const Auth: React.FC = () => {
                 <input
                   type="text"
                   required
-                  placeholder="e.g., Tadiwa Magora"
+                  placeholder="Full name"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   className="w-full bg-[#060914] border border-zinc-900 focus:border-orange-500/55 p-2.5 rounded text-xs outline-none text-zinc-200 pl-9"
@@ -236,7 +220,7 @@ export const Auth: React.FC = () => {
                   <input
                     type="email"
                     required
-                    placeholder="name@fleetcommand.co.zw"
+                    placeholder="email@example.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="w-full bg-[#060914] border border-zinc-900 focus:border-orange-500/55 p-2.5 rounded text-xs outline-none text-zinc-200 pl-9 font-mono"
