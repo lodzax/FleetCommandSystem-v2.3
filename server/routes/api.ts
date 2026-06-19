@@ -248,8 +248,8 @@ router.post('/fuel-requisitions', async (req: Request, res: Response) => {
   try {
     const r = req.body;
     await pool.query(
-      `INSERT INTO fuel_requisitions (id, truckId, truckPlate, driverId, driverName, litresRequested, estimatedCost, fuelDate, fuelType, branchId, branchName, dateRequested, status, reviewedBy, reviewedDate, approvedBy, approvedDate, rejectedBy, rejectedDate, rejectionReason, qrCodeData, purpose, redeemToken, redeemDate, redeemedByGasStation, redeemedAttendantSignature, redeemedActualLitres, redeemedActualCost, submittedBy, submittedById) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [r.id, r.truckId, r.truckPlate || null, r.driverId, r.driverName || null, r.litresRequested, r.estimatedCost, r.fuelDate, r.fuelType, r.branchId, r.branchName || null, r.dateRequested, r.status || 'Pending', r.reviewedBy || null, r.reviewedDate || null, r.approvedBy || null, r.approvedDate || null, r.rejectedBy || null, r.rejectedDate || null, r.rejectionReason || null, r.qrCodeData || null, r.purpose, r.redeemToken || null, r.redeemDate || null, r.redeemedByGasStation || null, r.redeemedAttendantSignature || null, r.redeemedActualLitres || null, r.redeemedActualCost || null, r.submittedBy || null, r.submittedById || null]
+      `INSERT INTO fuel_requisitions (id, truckId, truckPlate, driverId, driverName, litresRequested, estimatedCost, fuelDate, fuelType, branchId, branchName, dateRequested, status, reviewedBy, reviewedDate, verifiedBy, verifiedDate, approvedBy, approvedDate, rejectedBy, rejectedDate, rejectionReason, qrCodeData, purpose, redeemToken, redeemDate, redeemedByGasStation, redeemedAttendantSignature, redeemedActualLitres, redeemedActualCost, submittedBy, submittedById, destination, odometerReading) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [r.id, r.truckId, r.truckPlate || null, r.driverId, r.driverName || null, r.litresRequested, r.estimatedCost, r.fuelDate, r.fuelType, r.branchId, r.branchName || null, r.dateRequested, r.status || 'Pending', r.reviewedBy || null, r.reviewedDate || null, r.verifiedBy || null, r.verifiedDate || null, r.approvedBy || null, r.approvedDate || null, r.rejectedBy || null, r.rejectedDate || null, r.rejectionReason || null, r.qrCodeData || null, r.purpose, r.redeemToken || null, r.redeemDate || null, r.redeemedByGasStation || null, r.redeemedAttendantSignature || null, r.redeemedActualLitres || null, r.redeemedActualCost || null, r.submittedBy || null, r.submittedById || null, r.destination || null, r.odometerReading || null]
     );
     res.json({ success: true });
   } catch (e: any) { res.status(500).json({ error: e.message }); }
@@ -259,9 +259,20 @@ router.put('/fuel-requisitions/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const r = req.body;
+    const cols = ['status','reviewedBy','reviewedDate','verifiedBy','verifiedDate','approvedBy','approvedDate','rejectedBy','rejectedDate','rejectionReason','qrCodeData','redeemToken','redeemDate','redeemedByGasStation','redeemedAttendantSignature','redeemedActualLitres','redeemedActualCost','litresRequested','estimatedCost','odometerReading','destination'];
+    const setClauses: string[] = [];
+    const vals: any[] = [];
+    for (const c of cols) {
+      if (r[c] !== undefined) {
+        setClauses.push(c + '=?');
+        vals.push(r[c] === null ? null : r[c]);
+      }
+    }
+    if (!setClauses.length) return res.status(400).json({ error: 'no fields to update' });
+    vals.push(id);
     await pool.query(
-      `UPDATE fuel_requisitions SET status=?, reviewedBy=?, reviewedDate=?, approvedBy=?, approvedDate=?, rejectedBy=?, rejectedDate=?, rejectionReason=?, qrCodeData=?, redeemToken=?, redeemDate=?, redeemedByGasStation=?, redeemedAttendantSignature=?, redeemedActualLitres=?, redeemedActualCost=? WHERE id=?`,
-      [r.status, r.reviewedBy || null, r.reviewedDate || null, r.approvedBy || null, r.approvedDate || null, r.rejectedBy || null, r.rejectedDate || null, r.rejectionReason || null, r.qrCodeData || null, r.redeemToken || null, r.redeemDate || null, r.redeemedByGasStation || null, r.redeemedAttendantSignature || null, r.redeemedActualLitres || null, r.redeemedActualCost || null, id]
+      `UPDATE fuel_requisitions SET ${setClauses.join(',')} WHERE id=?`,
+      vals
     );
     res.json({ success: true });
   } catch (e: any) { res.status(500).json({ error: e.message }); }
