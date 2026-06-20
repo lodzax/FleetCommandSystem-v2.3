@@ -585,6 +585,16 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setToken(null);
   };
 
+  // Listen for session-expired events from API layer (JWT token expired)
+  useEffect(() => {
+    const handler = () => {
+      logout();
+      toast.error('Session expired. Please log in again.');
+    };
+    window.addEventListener('session-expired', handler);
+    return () => window.removeEventListener('session-expired', handler);
+  }, []);
+
   const approveUser = (id: string) => {
     setUsers(prev => prev.map(u => u.id === id ? { ...u, status: 'Verified' as const } : u));
     const target = users.find(u => u.id === id);

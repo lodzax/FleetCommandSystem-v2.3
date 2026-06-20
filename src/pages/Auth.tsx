@@ -28,26 +28,35 @@ export const Auth: React.FC = () => {
         setLoading(false);
         return;
       }
-    } catch {
-      // API unavailable — fall back to local state
-    }
-
-    // Offline fallback: match against local users (plaintext)
-    const matched = users.find(u => u.email.toLowerCase() === email.toLowerCase() && u.password === password);
-    if (!matched) {
+    } catch (err) {
+      // Only fall back to local state on network error, not on invalid credentials
+      if (err instanceof TypeError) {
+        // Network error — API unreachable, try local fallback
+        const matched = users.find(u => u.email.toLowerCase() === email.toLowerCase() && u.password === password);
+        if (!matched) {
+          toast.error('Invalid email or password');
+          setLoading(false);
+          return;
+        }
+        if (matched.status === 'Suspended') {
+          toast.error('Account suspended by administrator');
+          setLoading(false);
+          return;
+        }
+        // Warn user that writes won't sync to server
+        toast('Offline mode — data will sync when server is available', { icon: '⚠️' });
+        setActiveUser(matched);
+        setLoading(false);
+        return;
+      }
+      // API returned an error (invalid credentials, server error, etc.)
       toast.error('Invalid email or password');
       setLoading(false);
       return;
     }
-    
-    if (matched.status === 'Suspended') {
-      toast.error('Account suspended by administrator');
-      setLoading(false);
-      return;
-    }
 
-    setActiveUser(matched);
-    toast.success(`Welcome back, ${matched.name}!`);
+    // API login succeeded but returned success:false (shouldn't normally happen)
+    toast.error('Invalid email or password');
     setLoading(false);
   };
 
