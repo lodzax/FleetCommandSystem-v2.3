@@ -229,13 +229,16 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (apiMaintenance.ok) setMaintenance(apiMaintenance.data.map(m => ({ ...m, cost: Number(m.cost) || 0 })));
     if (apiFuelLogs.ok) setFuelLogs(apiFuelLogs.data.map(f => ({ ...f, litres: Number(f.litres) || 0, cost: Number(f.cost) || 0, odometer: Number(f.odometer) || 0 })));
     if (apiReqs.ok) {
-      setFuelRequisitions(apiReqs.data.map(r => ({
-        ...r,
-        litresRequested: Number(r.litresRequested) || 0,
-        estimatedCost: Number(r.estimatedCost) || 0,
-        redeemedActualLitres: r.redeemedActualLitres != null ? Number(r.redeemedActualLitres) : undefined,
-        redeemedActualCost: r.redeemedActualCost != null ? Number(r.redeemedActualCost) : undefined,
-      })));
+      // Initial load replaces state with API data; polls merge (handled below)
+      if (isInitial) {
+        setFuelRequisitions(apiReqs.data.map(r => ({
+          ...r,
+          litresRequested: Number(r.litresRequested) || 0,
+          estimatedCost: Number(r.estimatedCost) || 0,
+          redeemedActualLitres: r.redeemedActualLitres != null ? Number(r.redeemedActualLitres) : undefined,
+          redeemedActualCost: r.redeemedActualCost != null ? Number(r.redeemedActualCost) : undefined,
+        })));
+      }
     }
     if (apiActivities.ok) setActivities(apiActivities.data);
     if (apiBranches.ok) setBranches(apiBranches.data);
@@ -327,6 +330,59 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           }
         }
       }
+      // Sync fuel requisitions that are in local state but missing from API
+      if (apiReqs.ok) {
+        const apiReqIds = new Set(apiReqs.data.map((r: any) => r.id));
+        for (const localReq of fuelRequisitions) {
+          if (!apiReqIds.has(localReq.id)) {
+            api.saveFuelRequisition(localReq).catch((err) =>
+              console.error('sync saveFuelRequisition failed:', err)
+            );
+          }
+        }
+      }
+      // Sync fuel balance logs that are in local state but missing from API
+      if (apiFuelBalLogs.ok) {
+        const apiBalIds = new Set(apiFuelBalLogs.data.map((b: any) => b.id));
+        for (const localBal of fuelBalanceLogs) {
+          if (!apiBalIds.has(localBal.id)) {
+            api.saveFuelBalanceLog(localBal).catch(() => {});
+          }
+        }
+      }
+    }
+
+    // On non-initial polls, merge API records with local-only records (that haven't synced yet)
+    if (!isInitial && apiReqs.ok) {
+      const apiReqIds = new Set(apiReqs.data.map((r: any) => r.id));
+      setFuelRequisitions(prev => {
+        const localOnly = prev.filter(r => !apiReqIds.has(r.id));
+        if (localOnly.length === 0) return apiReqs.data.map((r: any) => ({
+          ...r,
+          litresRequested: Number(r.litresRequested) || 0,
+          estimatedCost: Number(r.estimatedCost) || 0,
+          redeemedActualLitres: r.redeemedActualLitres != null ? Number(r.redeemedActualLitres) : undefined,
+          redeemedActualCost: r.redeemedActualCost != null ? Number(r.redeemedActualCost) : undefined,
+        }));
+        // Retry save for any records that are still missing from the API
+        for (const local of localOnly) {
+          api.saveFuelRequisition(local).catch(err =>
+            console.error('poll retry saveFuelRequisition failed:', err)
+          );
+        }
+        const merged = [
+          ...apiReqs.data.map((r: any) => ({
+            ...r,
+            litresRequested: Number(r.litresRequested) || 0,
+            estimatedCost: Number(r.estimatedCost) || 0,
+            redeemedActualLitres: r.redeemedActualLitres != null ? Number(r.redeemedActualLitres) : undefined,
+            redeemedActualCost: r.redeemedActualCost != null ? Number(r.redeemedActualCost) : undefined,
+          })),
+          ...localOnly,
+        ];
+        localStorage.setItem('fc_requisitions', JSON.stringify(merged));
+        return merged;
+      });
     }
   };
 
@@ -875,7 +931,10 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
     api.saveFuelRequisition(newReq).catch(e => {
       console.error('saveFuelRequisition failed:', e);
-      toast.error('Requisition saved locally but server save failed. It will sync when connection is restored.');
+      const msg = e.message === 'Unauthorized'
+        ? 'Session expired. Please log out and log in again, then retry.'
+        : 'Save to server failed. The system will retry automatically.';
+      toast.error(msg);
     });
     logActivity(`Created fuel request: ${newId} (${req.litresRequested}L)`, `Truck: ${req.truckId}`);
   };
