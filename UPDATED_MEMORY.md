@@ -98,6 +98,15 @@ Production-harden FleetCommandSystem-v2.3 on `fleet.mineazy.co.zw` and deliver f
 2. **JWT session expiry detection** — `api.ts` decodes JWT payload client-side on 401; if `exp` claim indicates the token is expired, dispatches a `'session-expired'` custom event; FleetContext listens for this event and calls `logout()` with a clear toast message forcing the user to re-login
 3. **Auth offline fallback fixed** — `Auth.tsx` `handleLogin` catch block now only falls back to local credential matching on genuine network errors (`TypeError`, e.g. server unreachable); if the API returns 401 (invalid credentials) or 500, the user sees "Invalid email or password" and is NOT logged in locally without a JWT token (which previously caused all writes to silently fail with 401)
 
+### Completed — This Session (June 25, 2026) — Requisition Persistence Hardening
+1. **`pendingSync` flag on FuelRequisition** — Added `pendingSync?: boolean` and `_syncedId?: string` to `FuelRequisition` type in `types.ts` to explicitly track requisitions that haven't been confirmed by the server
+2. **Immediate local persistence with sync tracking** — `addFuelRequisition` now marks new requisitions with `pendingSync: true`; writes to localStorage synchronously inside state updater (existing behavior); API save runs async with exponential backoff retry (5s → 10s) and toast notification on first failure
+3. **Initial-load merge protection** — `refreshFromApi(true)` now merges API data with any local `pendingSync` requisitions instead of replacing state, preventing loss when a requisition is submitted before the initial API load completes
+4. **Poll merge preserves all pendingSync** — Every 20s poll merges API records with all `pendingSync` requisitions (not just "local-only" by ID); retries save for pending records; clears `pendingSync` flag when server confirms receipt
+5. **Online-transition sync includes requisitions** — When `apiOnline` transitions to true, pending requisitions are synced immediately (not waiting for next poll)
+6. **All mutation functions hardened** — `editRequisitionQuantity`, `reviewRequisition`, `approveRequisition`, `rejectRequisition`, `redeemRequisition` now all use the same retry-with-backoff pattern with toast notifications on first failure; no more silent `.catch(() => {})`
+7. **Race condition eliminated** — The combination of synchronous localStorage write, `pendingSync` tracking, initial-load merge, poll merge, online-transition sync, and immediate retry ensures a requisition can never disappear regardless of connectivity state (online, offline, intermittent)
+
 ## Key Decisions
 - Settings PUT bypasses JWT auth so prepaid balance saves work without a token
 - Light vehicles reuse the `Truck` type with `category` column instead of a separate table
@@ -125,6 +134,7 @@ Production-harden FleetCommandSystem-v2.3 on `fleet.mineazy.co.zw` and deliver f
 - **cPanel upload via `upload_files` with `overwrite=1`** — `save_file_content` silently produces 0-byte files for large payloads; use `upload_files` with `overwrite=1` flag for all assets including 2MB+ JS bundles
 - **Custom entries persisted in localStorage** — custom plates/drivers/branches stored under `fc_custom_plates`, `fc_custom_drivers`, `fc_custom_branches`; no API endpoint since these are UI convenience entries managed per-browser; custom drivers get auto-generated `custom-{timestamp}` IDs
 - **PaginatedTable default sort** — added `defaultSortKey`/`defaultSortDir` props for initial sort state; pre-sorting data before passing to table ensures newest-first display immediately; sort indicator shown on column header
+- **Requisition persistence via `pendingSync` flag** — every fuel requisition tracks sync state explicitly; synchronous localStorage write + async API save with exponential backoff retry (5s→10s); initial-load merge, 20s poll merge, and online-transition sync all preserve `pendingSync` records; all mutation functions (create, edit, review, approve, reject, redeem) use identical retry pattern with toast notifications; eliminates requisition loss under any connectivity scenario
 
 ## Deployment (cPanel — fleet.mineazy.co.zw)
 

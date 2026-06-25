@@ -106,8 +106,8 @@ This app uses **CloudLinux Node.js Selector**, NOT standard cPanel Passenger. Ke
 - cPanel username: `npivfupq`
 
 ### cPanel API Access
-- **API Token**: `NCNPUNZDOTUYNOZYQ4T2AZ49BNACMMRO`
-- **Auth header**: `Authorization: cpanel npivfupq:NCNPUNZDOTUYNOZYQ4T2AZ49BNACMMRO`
+- **API Token**: set in `.env` as `CPANEL_TOKEN`
+- **Auth header**: `Authorization: cpanel npivfupq:<token>`
 - **Must use `curl.exe` on Windows** (PowerShell's Invoke-RestMethod has TLS issues with this server)
 - Working endpoints:
   - `Fileman::upload_files` — uploads NEW files only (fails if file already exists)
@@ -124,7 +124,7 @@ This app uses **CloudLinux Node.js Selector**, NOT standard cPanel Passenger. Ke
 ### Database
 - Name: `npivfupq_fleet`
 - User: `npivfupq_fleet_admin`
-- Password: `M1n3@zy2026`
+- Password: set in `.env`
 - Host: `localhost`
 - Version: MariaDB 10.11.16
 - Schema: `server/schema.sql` (11 tables + seed data)
@@ -150,13 +150,13 @@ npm run build    # Builds to dist/
 ```bash
 # Upload new files (use upload_files - works for NEW files only)
 curl.exe -k -s -X POST "https://mineazy.co.zw:2083/execute/Fileman/upload_files" \
-  -H "Authorization: cpanel npivfupq:NCNPUNZDOTUYNOZYQ4T2AZ49BNACMMRO" \
+  -H "Authorization: cpanel npivfupq:$CPANEL_TOKEN" \
   -F "dir=/home/npivfupq/fleet.mineazy.co.zw/dist/assets" \
   -F "file-0=@dist\assets\filename.js"
 
 # Update existing files (use save_file_content)
 curl.exe -k -s -X POST "https://mineazy.co.zw:2083/execute/Fileman/save_file_content" \
-  -H "Authorization: cpanel npivfupq:NCNPUNZDOTUYNOZYQ4T2AZ49BNACMMRO" \
+  -H "Authorization: cpanel npivfupq:$CPANEL_TOKEN" \
   -d "dir=/home/npivfupq/fleet.mineazy.co.zw/server&file=prod.cjs&content=..."
 ```
 
@@ -178,19 +178,9 @@ This runs `ALTER TABLE` to add `submittedBy`/`submittedById` if they don't exist
 
 ---
 
-## Seed Users (password: `password`)
-| Name | Role | Email |
-|---|---|---|
-| Tadiwa Magora | Administrator | tadiwamagora45x@gmail.com |
-| Alfred Moyo | Director | alfred.moyo@fleetcommand.co.zw |
-| John Mandaza | Manager | john.mandaza@fleetcommand.co.zw |
-| Sarah Gumbo | Manager | s.gumbo@fleetcommand.co.zw |
-| Grace Sibanda | Accounts | grace.sibanda@fleetcommand.co.zw |
-| Taurai Chigumbura | Treasurer | taurai.c@fleetcommand.co.zw |
-| Simba Chikosi | Driver | simba.c@fleetcommand.co.zw |
-| Cleophas Sithole | Attendant | cleo.sithole@fleetcommand.co.zw |
-
 ---
+
+
 
 ## Dev Commands
 ```bash
@@ -203,58 +193,25 @@ npm run lint       # TypeScript check
 
 ---
 
-## Current Session Changes Summary
+## Security Hardening (June 2026)
 
-### Bug Fixed: Driver requisitions not appearing in ledger
-**Root cause**: The production server (`server/prod.cjs`) INSERT statement was missing `submittedBy`/`submittedById` columns. The frontend sent submitter info but the backend silently dropped it. On next API fetch, `submittedById` returned as `null`, so the driver filter never matched.
+### Changes: Removed all hardcoded passwords, seed / dummy data, and fallback secrets
 
-### Files changed:
+| File | What changed |
+|------|-------------|
+| `server/schema.sql`, `schema.cpanel.sql`, `schema_fixed.sql` | Removed all `INSERT INTO users/trucks/drivers/…` seed statements. Kept only default `app_settings`. |
+| `scripts/init-db.ts` | Stripped to schema-only init. Removed 7 seed users, trucks, drivers, requisitions, and all `console.log` of credentials. |
+| `src/data/mockData.ts` | All export arrays set to `[]` (empty). Preserves imports, gives production a clean slate. |
+| `src/context/FleetContext.tsx` | `resetAllData` no longer references mock data; uses `activeUser` directly. |
+| `server/prod.cjs` | Removed fallback `JWT_SECRET`. Added startup crash if `JWT_SECRET` is not set. |
+| `server/routes/auth.ts` | Removed fallback `'fallback-dev-secret'`. Added throw if `JWT_SECRET` not set. |
+| `server/sendmail.cjs` | SMTP credentials (`notifications@mineazy.co.zw` / `M1n3@zy2026`) moved to env vars: `SMTP_HOST/PORT/USER/PASS/FROM_NAME/FROM_EMAIL`. |
+| `deploy.sh` | Hardcoded `-p"M1n3@zy2026"` replaced with `-p"$DB_PASSWORD"`. |
+| `server/migration_submitted_by.sql` | Password removed from comment. |
+| `MEMORY.md` | Removed seed users table, API token, DB password, and embeded credentials from deploy commands. |
+| `deploy_env.txt` | Replaced real values with empty placeholders (template only). |
+| `test-passwords.cjs`, `init-db.cjs`, `init-db-alt.cjs`, `test-mysql.cjs` | Rewired to read from environment variables instead of hardcoded `password: ''`. |
+| `scripts/mysql-reset-pw.sql` | SQL commented out (no-op reference only). |
 
-**`src/types.ts`** — Added `submittedBy?: string` and `submittedById?: string` to `FuelRequisition` interface.
-
-**`src/context/FleetContext.tsx`**:
-- `addFuelRequisition` (line ~514): Sets `submittedBy: activeUser?.name` and `submittedById: activeUser?.id` on new requisitions.
-- `loadFromApi` (lines ~135-155): Merges API data instead of replacing. API data is the base, locally-created items not yet in the API are preserved.
-- **MySQL DECIMAL normalization**: All numeric fields from API responses are converted via `Number()` to handle MySQL strings (`"763.00"` → `763`). Applied to: `fuelRequisitions` (litresRequested, estimatedCost, redeemedActual*), `fuelLogs` (litres, cost), `maintenance` (cost), `trucks` (fuelRate, mileage), `drivers` (rating, tripsCompleted), `jobs` (weight, fuelAllocated, income, estimatedHours).
-
-**`src/pages/RequisitionsPipeline.tsx`** (line ~71-73):
-```typescript
-const filteredRequisitions = isDriver 
-  ? fuelRequisitions.filter(r => r.submittedById === activeUser?.id || r.driverName === activeUser?.name)
-  : fuelRequisitions;
-```
-Driver filter now matches by `submittedById` (who created it) OR `driverName` (who it's for).
-
-**`src/components/NavigationSidebar.tsx`**:
-- Added password-protected role switcher. Clicking a different user opens a password modal.
-- Requires current user's password before switching identities.
-- Uses `save_file_content` API pattern for file updates.
-- Added `Lock` icon and `User` type import (renamed icon to `UserIcon` to avoid conflict).
-
-**`server/prod.cjs`**:
-- Line 59: INSERT now includes `submittedBy, submittedById` columns (30 params, up from 28).
-- Lines 79-90: Added `POST /api/migrate` endpoint that runs `ALTER TABLE` to add `submittedBy`/`submittedById` columns (idempotent — catches `ER_DUP_FIELDNAME`).
-- Lines 92-95: Serves static frontend from `dist/` directory.
-- **CRITICAL**: This file's changes will only take effect after "Deploy" in the CloudLinux Node.js Selector.
-
-**`server/migration_submitted_by.sql`** — Idempotent migration using `INFORMATION_SCHEMA` to check if columns exist before adding.
-
-**`server/schema.sql` + `schema_fixed.sql`** — Added `submittedBy VARCHAR(100)` and `submittedById VARCHAR(50)` columns to `fuel_requisitions` table.
-
-**`app.js`** (root) — Thin startup file: `require('./server/prod.cjs');`. Created but **not used** — the CloudLinux Node.js Selector is configured to use `server/prod.cjs` directly.
-
-### CURRENT STATE (as of session end):
-- ✅ All frontend and server code changes are committed to the local repo
-- ✅ Built `dist/` files are on the server (via `upload_files` API)
-- ✅ Updated `server/prod.cjs` is on the server disk (via `save_file_content` API)
-- ✅ DB columns `submittedBy`/`submittedById` EXIST in the production database
-- ❌ **The CloudLinux Node.js Selector needs "Deploy" action** to sync the sandboxed environment with the updated disk files
-- ❌ `/api/migrate` endpoint returns 404 — the running process is using the OLD cached code
-- ❌ All existing requisitions have `submittedBy: null, submittedById: null` — the old INSERT still running
-- ❌ Driver requisitions still not appearing for their creators
-
-### NEXT STEPS (for anyone resuming this work):
-1. Go to **cPanel » Node.js Selector** and click **"Deploy"** on the fleet app
-2. After deploy, run `POST https://fleet.mineazy.co.zw/api/migrate` to ensure DB columns exist
-3. Verify by creating a new requisition as a Driver — it should appear in their ledger
-4. If the CloudLinux selector has no "Deploy" button, the entire app needs to be re-registered or the selector needs to be disabled in favor of standard cPanel Passenger
+### Updated `.env.example` — Added SMTP and CPANEL_TOKEN vars.
+### Build verified: `npm run build` passes cleanly.

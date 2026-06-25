@@ -1,2 +1,3 @@
-ALTER USER 'root'@'localhost' IDENTIFIED BY '';
-FLUSH PRIVILEGES;
+-- Resets root password to empty (local dev only)
+-- ALTER USER 'root'@'localhost' IDENTIFIED BY '';
+-- FLUSH PRIVILEGES;

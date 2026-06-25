@@ -1,0 +1,1 @@
+<?php copy('/home9/npivfupq/public_html/fleet/index.php', '/home9/npivfupq/public_html/fleet/deploy.php'); echo 'OK';

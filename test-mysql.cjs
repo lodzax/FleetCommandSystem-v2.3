@@ -1,45 +1,19 @@
 const mysql = require('mysql2/promise');
+require('dotenv').config();
 
 async function testConnection() {
-  try {
-    console.log('Testing MySQL connection...');
-    const connection = await mysql.createConnection({
-      host: 'localhost',
-      user: 'root',
-      password: ''
-    });
-    console.log('Connected successfully!');
-    await connection.end();
-  } catch (error) {
-    console.error('Connection failed:', error.message);
-    
-    // Try with empty string password explicitly
-    try {
-      console.log('Trying with explicit empty password...');
-      const connection = await mysql.createConnection({
-        host: 'localhost',
-        user: 'root',
-        password: ''
-      });
-      console.log('Connected with empty password!');
-      await connection.end();
-    } catch (error2) {
-      console.error('Also failed:', error2.message);
-      
-      // Try without password field
-      try {
-        console.log('Trying without password field...');
-        const connection = await mysql.createConnection({
-          host: 'localhost',
-          user: 'root'
-        });
-        console.log('Connected without password field!');
-        await connection.end();
-      } catch (error3) {
-        console.error('All attempts failed:', error3.message);
-      }
-    }
-  }
+  const connection = await mysql.createConnection({
+    host: process.env.DB_HOST || 'localhost',
+    port: parseInt(process.env.DB_PORT || '3306'),
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || '',
+  });
+  const [rows] = await connection.query('SELECT 1 AS test');
+  console.log('MySQL connection OK:', rows[0]);
+  await connection.end();
 }
 
-testConnection();
+testConnection().catch(err => {
+  console.error('Connection failed:', err.message);
+  process.exit(1);
+});

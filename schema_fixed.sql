@@ -221,19 +221,6 @@ CREATE TABLE IF NOT EXISTS app_settings (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
--- Seed data: default admin user
-INSERT IGNORE INTO users (id, name, email, role, status, memberSince, password) VALUES
-('6a0af25f60e8427cb4294428', 'Tadiwa Magora', 'admin@fleetcommand.co.zw', 'Administrator', 'Verified', '2025-01-01', 'admin123');
-
--- Seed data: default branches
-INSERT IGNORE INTO branches (id, name, locationName, lat, lng, phone, manager) VALUES
-('BR-101', 'Hwange Central Depot', 'Hwange Mining Zone', -18.3647, 26.5000, '+263 81 22345', 'Alfred Moyo'),
-('BR-102', 'Bulawayo Transit Depot', 'Bulawayo Industrial', -20.1500, 28.5833, '+263 9 77890', 'Sipho Ndlovu'),
-('BR-103', 'Harare HQ Dispatch', 'Harare Central', -17.8292, 31.0522, '+263 4 489320', 'Grace Kabasa');
-
--- Seed data: default settings
-INSERT IGNORE INTO app_settings (settingKey, settingValue) VALUES
-('theme', 'slate'),
-('logoText', 'FLEETCOMMAND'),
-('logoEmoji', 'ðŸš›');
+-- Default settings (set via API on first launch)
+-- App settings are created by the application on first run
 

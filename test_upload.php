@@ -1,0 +1,1 @@
+<?php echo "The dollar sign is: " . (isset($_GET['test']) ? $_GET['test'] : 'not set'); ?>

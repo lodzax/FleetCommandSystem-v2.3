@@ -140,6 +140,8 @@ export interface FuelRequisition {
   destination?: string;
   odometerReading?: number;
   fillingStation?: string;
+  pendingSync?: boolean;
+  _syncedId?: string;
 }
 
 export interface Branch {

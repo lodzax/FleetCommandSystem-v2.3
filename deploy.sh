@@ -12,7 +12,7 @@ npm install --production
 
 # Import database schema
 echo "[2/4] Importing database schema..."
-mysql -u npivfupq_fleet_admin -p"M1n3@zy2026" npivfupq_fleet < server/schema.sql
+mysql -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" < server/schema.sql
 
 # Verify dist files exist
 if [ -d "dist" ]; then

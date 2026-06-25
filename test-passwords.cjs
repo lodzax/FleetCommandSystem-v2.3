@@ -1,27 +1,20 @@
+// Test MySQL connection using environment variables
 const mysql = require('mysql2/promise');
+require('dotenv').config();
 
-const passwordsToTry = ['', 'root', 'password', 'admin', 'mysql', '123456', 'localhost'];
-
-async function testPasswords() {
-  for (const password of passwordsToTry) {
-    try {
-      console.log(`Trying password: '${password}'`);
-      const connection = await mysql.createConnection({
-        host: 'localhost',
-        user: 'root',
-        password: password
-      });
-      console.log(`Success with password: '${password}'`);
-      await connection.end();
-      return password;
-    } catch (err) {
-      console.log(`Failed with password '${password}': ${err.message}`);
-    }
-  }
-  console.log('All passwords failed');
-  return null;
+async function testConnection() {
+  const connection = await mysql.createConnection({
+    host: process.env.DB_HOST || 'localhost',
+    port: parseInt(process.env.DB_PORT || '3306'),
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || '',
+  });
+  const [rows] = await connection.query('SELECT 1 AS test');
+  console.log('MySQL connection OK:', rows[0]);
+  await connection.end();
 }
 
-testPasswords().then(pwd => {
-  console.log(`Working password: ${pwd}`);
+testConnection().catch(err => {
+  console.error('Connection failed:', err.message);
+  process.exit(1);
 });

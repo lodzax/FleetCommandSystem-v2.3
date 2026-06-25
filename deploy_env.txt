@@ -1,0 +1,16 @@
+# Production environment variables — copy to .env on server
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=
+DB_PASSWORD=
+DB_NAME=
+JWT_SECRET=
+APP_URL=
+API_PORT=3001
+GEMINI_API_KEY=
+SMTP_HOST=mail.mineazy.co.zw
+SMTP_PORT=465
+SMTP_USER=notifications@mineazy.co.zw
+SMTP_PASS=
+SMTP_FROM_NAME=FleetCommand Notifications
+CPANEL_TOKEN=

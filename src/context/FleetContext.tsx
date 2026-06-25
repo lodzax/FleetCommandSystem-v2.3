@@ -229,15 +229,24 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (apiMaintenance.ok) setMaintenance(apiMaintenance.data.map(m => ({ ...m, cost: Number(m.cost) || 0 })));
     if (apiFuelLogs.ok) setFuelLogs(apiFuelLogs.data.map(f => ({ ...f, litres: Number(f.litres) || 0, cost: Number(f.cost) || 0, odometer: Number(f.odometer) || 0 })));
     if (apiReqs.ok) {
-      // Initial load replaces state with API data; polls merge (handled below)
+      // Initial load: merge API data with local pendingSync requisitions to prevent loss
       if (isInitial) {
-        setFuelRequisitions(apiReqs.data.map(r => ({
-          ...r,
-          litresRequested: Number(r.litresRequested) || 0,
-          estimatedCost: Number(r.estimatedCost) || 0,
-          redeemedActualLitres: r.redeemedActualLitres != null ? Number(r.redeemedActualLitres) : undefined,
-          redeemedActualCost: r.redeemedActualCost != null ? Number(r.redeemedActualCost) : undefined,
-        })));
+        setFuelRequisitions(prev => {
+          const apiReqIds = new Set(apiReqs.data.map((r: any) => r.id));
+          const pendingSyncLocal = prev.filter(r => r.pendingSync && !apiReqIds.has(r.id));
+          const merged = [
+            ...apiReqs.data.map((r: any) => ({
+              ...r,
+              litresRequested: Number(r.litresRequested) || 0,
+              estimatedCost: Number(r.estimatedCost) || 0,
+              redeemedActualLitres: r.redeemedActualLitres != null ? Number(r.redeemedActualLitres) : undefined,
+              redeemedActualCost: r.redeemedActualCost != null ? Number(r.redeemedActualCost) : undefined,
+            })),
+            ...pendingSyncLocal,
+          ];
+          localStorage.setItem('fc_requisitions', JSON.stringify(merged));
+          return merged;
+        });
       }
     }
     if (apiActivities.ok) setActivities(apiActivities.data);
@@ -352,24 +361,35 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
     }
 
-    // On non-initial polls, merge API records with local-only records (that haven't synced yet)
+    // On all polls, merge API records with local pendingSync requisitions to prevent loss
     if (!isInitial && apiReqs.ok) {
       const apiReqIds = new Set(apiReqs.data.map((r: any) => r.id));
       setFuelRequisitions(prev => {
-        const localOnly = prev.filter(r => !apiReqIds.has(r.id));
-        if (localOnly.length === 0) return apiReqs.data.map((r: any) => ({
+        // Preserve all pendingSync requisitions + any local-only records not in API
+        const pendingSyncLocal = prev.filter(r => r.pendingSync);
+        const otherLocalOnly = prev.filter(r => !r.pendingSync && !apiReqIds.has(r.id));
+        const allLocalOnly = [...pendingSyncLocal, ...otherLocalOnly];
+
+        if (allLocalOnly.length === 0) return apiReqs.data.map((r: any) => ({
           ...r,
           litresRequested: Number(r.litresRequested) || 0,
           estimatedCost: Number(r.estimatedCost) || 0,
           redeemedActualLitres: r.redeemedActualLitres != null ? Number(r.redeemedActualLitres) : undefined,
           redeemedActualCost: r.redeemedActualCost != null ? Number(r.redeemedActualCost) : undefined,
         }));
-        // Retry save for any records that are still missing from the API
-        for (const local of localOnly) {
-          api.saveFuelRequisition(local).catch(err =>
-            console.error('poll retry saveFuelRequisition failed:', err)
-          );
+
+        // Retry save for pendingSync records that are still missing from the API
+        for (const local of pendingSyncLocal) {
+          if (!apiReqIds.has(local.id)) {
+            api.saveFuelRequisition(local).catch(err =>
+              console.error('poll retry saveFuelRequisition failed:', err)
+            );
+          } else {
+            // Server has it now, clear pendingSync flag
+            setFuelRequisitions(p => p.map(r => r.id === local.id ? { ...r, pendingSync: false } : r));
+          }
         }
+
         const merged = [
           ...apiReqs.data.map((r: any) => ({
             ...r,
@@ -378,7 +398,7 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             redeemedActualLitres: r.redeemedActualLitres != null ? Number(r.redeemedActualLitres) : undefined,
             redeemedActualCost: r.redeemedActualCost != null ? Number(r.redeemedActualCost) : undefined,
           })),
-          ...localOnly,
+          ...allLocalOnly,
         ];
         localStorage.setItem('fc_requisitions', JSON.stringify(merged));
         return merged;
@@ -398,12 +418,13 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     if (apiOnline && !prevOnline.current) {
       const sync = async () => {
-        const [apiTrucks, apiDrivers, apiJobs, apiMaintenance, apiBranches] = await Promise.all([
+        const [apiTrucks, apiDrivers, apiJobs, apiMaintenance, apiBranches, apiReqs] = await Promise.all([
           api.getTrucks().catch(() => []),
           api.getDrivers().catch(() => []),
           api.getJobs().catch(() => []),
           api.getMaintenance().catch(() => []),
           api.getBranches().catch(() => []),
+          api.getFuelRequisitions().catch(() => []),
         ]);
         const apiTruckPlates = new Set(apiTrucks.map((t: any) => t.plateNumber));
         for (const localTruck of trucks) {
@@ -424,6 +445,13 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const apiBranchIds = new Set(apiBranches.map((b: any) => b.id));
         for (const localB of branches) {
           if (!apiBranchIds.has(localB.id)) api.saveBranch(localB).catch(() => {});
+        }
+        // Sync pending fuel requisitions
+        const apiReqIds = new Set(apiReqs.map((r: any) => r.id));
+        for (const localReq of fuelRequisitions) {
+          if (localReq.pendingSync && !apiReqIds.has(localReq.id)) {
+            api.saveFuelRequisition(localReq).catch((err) => console.error('online sync saveFuelRequisition failed:', err));
+          }
         }
       };
       sync();
@@ -933,19 +961,34 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       dateRequested: new Date().toISOString().split('T')[0],
       submittedBy: activeUser?.name,
       submittedById: activeUser?.id,
+      pendingSync: true,
     };
     setFuelRequisitions(prev => {
       const updated = [newReq, ...prev];
       localStorage.setItem('fc_requisitions', JSON.stringify(updated));
       return updated;
     });
-    api.saveFuelRequisition(newReq).catch(e => {
-      console.error('saveFuelRequisition failed:', e);
-      const msg = e.message === 'Unauthorized'
-        ? 'Session expired. Please log out and log in again, then retry.'
-        : 'Save to server failed. The system will retry automatically.';
-      toast.error(msg);
-    });
+
+    const attemptSave = async (reqToSave: FuelRequisition, isRetry = false) => {
+      try {
+        await api.saveFuelRequisition(reqToSave);
+        if (reqToSave.pendingSync) {
+          setFuelRequisitions(prev => prev.map(r => r.id === reqToSave.id ? { ...r, pendingSync: false } : r));
+        }
+      } catch (e) {
+        console.error('saveFuelRequisition failed:', e);
+        if (!isRetry) {
+          const msg = e.message === 'Unauthorized'
+            ? 'Session expired. Please log out and log in again, then retry.'
+            : 'Save to server failed. The system will retry automatically.';
+          toast.error(msg);
+        }
+        // Immediate retry with exponential backoff
+        setTimeout(() => attemptSave(reqToSave, true), isRetry ? 10000 : 5000);
+      }
+    };
+
+    attemptSave(newReq);
     logActivity(`Created fuel request: ${newId} (${req.litresRequested}L)`, `Truck: ${req.truckId}`);
   };
 
@@ -967,7 +1010,21 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const editRequisitionQuantity = (id: string, litresRequested: number, estimatedCost: number) => {
     setFuelRequisitions(prev => prev.map(r => r.id === id ? { ...r, litresRequested, estimatedCost } : r));
-    api.updateFuelRequisition(id, { litresRequested, estimatedCost }).catch(() => {});
+    const attemptUpdate = async (isRetry = false) => {
+      try {
+        await api.updateFuelRequisition(id, { litresRequested, estimatedCost });
+      } catch (e) {
+        console.error('editRequisitionQuantity failed:', e);
+        if (!isRetry) {
+          const msg = e.message === 'Unauthorized'
+            ? 'Session expired. Please log out and log in again, then retry.'
+            : 'Update failed. The system will retry automatically.';
+          toast.error(msg);
+        }
+        setTimeout(() => attemptUpdate(true), isRetry ? 10000 : 5000);
+      }
+    };
+    attemptUpdate();
     logActivity(`Fuel Requisition ${id}: quantity adjusted to ${litresRequested}L`);
   };
 
@@ -988,8 +1045,22 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }));
 
     const targetReq = fuelRequisitions.find(r => r.id === id);
-    api.updateFuelRequisition(id, { status: 'Reviewed', reviewedBy: reviewerName, reviewedDate: today, litresRequested: targetReq?.litresRequested, estimatedCost: targetReq?.estimatedCost }).catch(() => {});
-    api.saveActivity({ id: `ACT-${Date.now()}`, userId: activeUser?.id || '', userName: reviewerName, action: `Fuel Requisition ${id}: Reviewed by ${reviewerName}`, timestamp: new Date().toISOString() }).catch(() => {});
+    const attemptUpdate = async (isRetry = false) => {
+      try {
+        await api.updateFuelRequisition(id, { status: 'Reviewed', reviewedBy: reviewerName, reviewedDate: today, litresRequested: targetReq?.litresRequested, estimatedCost: targetReq?.estimatedCost });
+        await api.saveActivity({ id: `ACT-${Date.now()}`, userId: activeUser?.id || '', userName: reviewerName, action: `Fuel Requisition ${id}: Reviewed by ${reviewerName}`, timestamp: new Date().toISOString() });
+      } catch (e) {
+        console.error('reviewRequisition failed:', e);
+        if (!isRetry) {
+          const msg = e.message === 'Unauthorized'
+            ? 'Session expired. Please log out and log in again, then retry.'
+            : 'Review failed. The system will retry automatically.';
+          toast.error(msg);
+        }
+        setTimeout(() => attemptUpdate(true), isRetry ? 10000 : 5000);
+      }
+    };
+    attemptUpdate();
 
     logActivity(`Fuel Requisition ${id}: Reviewed by ${reviewerName}`);
     
@@ -1029,8 +1100,22 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }));
 
     const req = fuelRequisitions.find(r => r.id === id);
-    api.updateFuelRequisition(id, { status: 'Approved', approvedBy: approverName, approvedDate: today, redeemToken, qrCodeData, litresRequested: req?.litresRequested, estimatedCost: req?.estimatedCost }).catch(() => {});
-    api.saveActivity({ id: `ACT-${Date.now()}`, userId: activeUser?.id || '', userName: approverName, action: `Fuel Requisition ${id}: Approved by ${approverName}`, timestamp: new Date().toISOString() }).catch(() => {});
+    const attemptUpdate = async (isRetry = false) => {
+      try {
+        await api.updateFuelRequisition(id, { status: 'Approved', approvedBy: approverName, approvedDate: today, redeemToken, qrCodeData, litresRequested: req?.litresRequested, estimatedCost: req?.estimatedCost });
+        await api.saveActivity({ id: `ACT-${Date.now()}`, userId: activeUser?.id || '', userName: approverName, action: `Fuel Requisition ${id}: Approved by ${approverName}`, timestamp: new Date().toISOString() });
+      } catch (e) {
+        console.error('approveRequisition failed:', e);
+        if (!isRetry) {
+          const msg = e.message === 'Unauthorized'
+            ? 'Session expired. Please log out and log in again, then retry.'
+            : 'Approval failed. The system will retry automatically.';
+          toast.error(msg);
+        }
+        setTimeout(() => attemptUpdate(true), isRetry ? 10000 : 5000);
+      }
+    };
+    attemptUpdate();
 
     logActivity(`Fuel Requisition ${id}: Approved by ${approverName}`);
     const submitter = users.find(u => u.name === req?.driverName);
@@ -1057,8 +1142,22 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }));
 
     const rejectReq = fuelRequisitions.find(r => r.id === id);
-    api.updateFuelRequisition(id, { status: 'Rejected', rejectedBy: rejecterName, rejectedDate: today, rejectionReason: reason, litresRequested: rejectReq?.litresRequested, estimatedCost: rejectReq?.estimatedCost }).catch(() => {});
-    api.saveActivity({ id: `ACT-${Date.now()}`, userId: activeUser?.id || '', userName: rejecterName, action: `Fuel Requisition ${id}: Rejected by ${rejecterName} - Reason: ${reason}`, timestamp: new Date().toISOString() }).catch(() => {});
+    const attemptUpdate = async (isRetry = false) => {
+      try {
+        await api.updateFuelRequisition(id, { status: 'Rejected', rejectedBy: rejecterName, rejectedDate: today, rejectionReason: reason, litresRequested: rejectReq?.litresRequested, estimatedCost: rejectReq?.estimatedCost });
+        await api.saveActivity({ id: `ACT-${Date.now()}`, userId: activeUser?.id || '', userName: rejecterName, action: `Fuel Requisition ${id}: Rejected by ${rejecterName} - Reason: ${reason}`, timestamp: new Date().toISOString() });
+      } catch (e) {
+        console.error('rejectRequisition failed:', e);
+        if (!isRetry) {
+          const msg = e.message === 'Unauthorized'
+            ? 'Session expired. Please log out and log in again, then retry.'
+            : 'Rejection failed. The system will retry automatically.';
+          toast.error(msg);
+        }
+        setTimeout(() => attemptUpdate(true), isRetry ? 10000 : 5000);
+      }
+    };
+    attemptUpdate();
 
     logActivity(`Fuel Requisition ${id}: Rejected by ${rejecterName} - Reason: ${reason}`);
     
@@ -1113,8 +1212,22 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
     setFuelLogs(prev => [newLog, ...prev]);
 
-    api.updateFuelRequisition(id, { status: 'Redeemed', redeemDate: new Date().toISOString().split('T')[0], redeemedByGasStation: rd.redeemedByGasStation, redeemedDrawdownVoucher: rd.redeemedDrawdownVoucher, redeemedAttendantSignature: rd.redeemedAttendantSignature, redeemedActualLitres: rd.redeemedActualLitres, redeemedActualCost: rd.redeemedActualCost, litresRequested: target.litresRequested, estimatedCost: target.estimatedCost }).catch(() => {});
-    api.saveFuelLog(newLog).catch(() => {});
+    const attemptUpdate = async (isRetry = false) => {
+      try {
+        await api.updateFuelRequisition(id, { status: 'Redeemed', redeemDate: new Date().toISOString().split('T')[0], redeemedByGasStation: rd.redeemedByGasStation, redeemedDrawdownVoucher: rd.redeemedDrawdownVoucher, redeemedAttendantSignature: rd.redeemedAttendantSignature, redeemedActualLitres: rd.redeemedActualLitres, redeemedActualCost: rd.redeemedActualCost, litresRequested: target.litresRequested, estimatedCost: target.estimatedCost });
+        await api.saveFuelLog(newLog);
+      } catch (e) {
+        console.error('redeemRequisition failed:', e);
+        if (!isRetry) {
+          const msg = e.message === 'Unauthorized'
+            ? 'Session expired. Please log out and log in again, then retry.'
+            : 'Redemption failed. The system will retry automatically.';
+          toast.error(msg);
+        }
+        setTimeout(() => attemptUpdate(true), isRetry ? 10000 : 5000);
+      }
+    };
+    attemptUpdate();
 
     setPrepaidFuelBalanceState(prev => {
       const newDiesel = Math.max(0, prev.diesel - (target.fuelType === 'Diesel' ? rd.redeemedActualLitres : 0));

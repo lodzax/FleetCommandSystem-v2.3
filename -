@@ -1,0 +1,10 @@
+dcaa174 Add edit details functionality for drivers and trucks
+ dist/assets/index-BoeRo5xh.js                      | 761 ---------------------
+ dist/assets/index-CRRAkl7f.js                      | 761 +++++++++++++++++++++
+ .../{index-CQHQ_xDo.css => index-Dm1axHe8.css}     |   2 +-
+ .../{index.es-Cz4xdIUJ.js => index.es-D_UHHrTD.js} |   2 +-
+ dist/index.html                                    |   4 +-
+ src/context/FleetContext.tsx                       | 353 ++++++++--
+ src/pages/Drivers.tsx                              | 121 +++-
+ src/pages/Fleet.tsx                                | 393 +++++++++--
+ 8 files changed, 1487 insertions(+), 910 deletions(-)
