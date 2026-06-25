@@ -344,7 +344,8 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const apiReqIds = new Set(apiReqs.data.map((r: any) => r.id));
         for (const localReq of fuelRequisitions) {
           if (!apiReqIds.has(localReq.id)) {
-            api.saveFuelRequisition(localReq).catch((err) =>
+            const { pendingSync, _syncedId, ...apiReq } = localReq;
+            api.saveFuelRequisition(apiReq).catch((err) =>
               console.error('sync saveFuelRequisition failed:', err)
             );
           }
@@ -381,7 +382,8 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         // Retry save for pendingSync records that are still missing from the API
         for (const local of pendingSyncLocal) {
           if (!apiReqIds.has(local.id)) {
-            api.saveFuelRequisition(local).catch(err =>
+            const { pendingSync, _syncedId, ...apiReq } = local;
+            api.saveFuelRequisition(apiReq).catch(err =>
               console.error('poll retry saveFuelRequisition failed:', err)
             );
           } else {
@@ -450,7 +452,8 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const apiReqIds = new Set(apiReqs.map((r: any) => r.id));
         for (const localReq of fuelRequisitions) {
           if (localReq.pendingSync && !apiReqIds.has(localReq.id)) {
-            api.saveFuelRequisition(localReq).catch((err) => console.error('online sync saveFuelRequisition failed:', err));
+            const { pendingSync, _syncedId, ...apiReq } = localReq;
+            api.saveFuelRequisition(apiReq).catch((err) => console.error('online sync saveFuelRequisition failed:', err));
           }
         }
       };
@@ -971,7 +974,9 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     const attemptSave = async (reqToSave: FuelRequisition, isRetry = false) => {
       try {
-        await api.saveFuelRequisition(reqToSave);
+        // Strip client-only fields before sending to API
+        const { pendingSync, _syncedId, ...apiReq } = reqToSave;
+        await api.saveFuelRequisition(apiReq);
         if (reqToSave.pendingSync) {
           setFuelRequisitions(prev => prev.map(r => r.id === reqToSave.id ? { ...r, pendingSync: false } : r));
         }
