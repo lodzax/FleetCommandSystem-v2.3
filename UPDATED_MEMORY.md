@@ -106,6 +106,7 @@ Production-harden FleetCommandSystem-v2.3 on `fleet.mineazy.co.zw` and deliver f
 5. **Online-transition sync includes requisitions** — When `apiOnline` transitions to true, pending requisitions are synced immediately (not waiting for next poll)
 6. **All mutation functions hardened** — `editRequisitionQuantity`, `reviewRequisition`, `approveRequisition`, `rejectRequisition`, `redeemRequisition` now all use the same retry-with-backoff pattern with toast notifications on first failure; no more silent `.catch(() => {})`
 7. **Race condition eliminated** — The combination of synchronous localStorage write, `pendingSync` tracking, initial-load merge, poll merge, online-transition sync, and immediate retry ensures a requisition can never disappear regardless of connectivity state (online, offline, intermittent)
+8. **Fixed 500 error on submission** — Client-only fields `pendingSync` and `_syncedId` were being sent to the server causing 500 errors; all 4 `saveFuelRequisition` call sites (immediate save, initial sync, poll retry, online sync) now strip these fields via destructuring before API calls
 
 ## Key Decisions
 - Settings PUT bypasses JWT auth so prepaid balance saves work without a token
