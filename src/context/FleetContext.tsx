@@ -97,6 +97,47 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return val ? JSON.parse(val) : initial;
   };
 
+  // Write-ahead log for unsaved fuel requisitions — persists across page reloads
+  const getPendingReqIds = (): string[] => {
+    try { return JSON.parse(localStorage.getItem('fc_pending_req_ids') || '[]'); } catch { return []; }
+  };
+  const addPendingReqId = (id: string) => {
+    const ids = getPendingReqIds();
+    if (!ids.includes(id)) {
+      ids.push(id);
+      localStorage.setItem('fc_pending_req_ids', JSON.stringify(ids));
+    }
+  };
+  const removePendingReqId = (id: string) => {
+    const ids = getPendingReqIds().filter(i => i !== id);
+    localStorage.setItem('fc_pending_req_ids', JSON.stringify(ids));
+  };
+  const reconcilePendingRequisitions = () => {
+    const pendingIds = getPendingReqIds();
+    if (pendingIds.length === 0) return;
+    setFuelRequisitions(prev => {
+      let changed = false;
+      const updated = [...prev];
+      for (const id of pendingIds) {
+        if (!updated.find(r => r.id === id)) {
+          // Try to recover from the main localStorage backup
+          const stored = getStored('requisitions', []) as FuelRequisition[];
+          const recovered = stored.find(r => r.id === id);
+          if (recovered) {
+            updated.unshift({ ...recovered, pendingSync: true });
+            changed = true;
+          } else {
+            console.warn('Pending requisition', id, 'not found in localStorage — possible data loss');
+          }
+        }
+      }
+      if (changed) {
+        localStorage.setItem('fc_requisitions', JSON.stringify(updated));
+      }
+      return changed ? updated : prev;
+    });
+  };
+
   const [apiOnline, setApiOnline] = useState(false);
 
   const [users, setUsers] = useState<User[]>(() => getStored('users', []));
@@ -342,6 +383,10 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       // Sync fuel requisitions that are in local state but missing from API
       if (apiReqs.ok) {
         const apiReqIds = new Set(apiReqs.data.map((r: any) => r.id));
+        // Clear pending queue for any requisitions now found in API response
+        for (const id of getPendingReqIds()) {
+          if (apiReqIds.has(id)) removePendingReqId(id);
+        }
         for (const localReq of fuelRequisitions) {
           if (!apiReqIds.has(localReq.id)) {
             const { pendingSync, _syncedId, ...apiReq } = localReq;
@@ -387,7 +432,8 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               console.error('poll retry saveFuelRequisition failed:', err)
             );
           } else {
-            // Server has it now, clear pendingSync flag
+            // Server has it now, clear pendingSync flag and remove from queue
+            removePendingReqId(local.id);
             setFuelRequisitions(p => p.map(r => r.id === local.id ? { ...r, pendingSync: false } : r));
           }
         }
@@ -406,6 +452,9 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         return merged;
       });
     }
+
+    // Reconcile any pending requisitions that may have been dropped from state
+    reconcilePendingRequisitions();
   };
 
   // Initial data load + start polling
@@ -413,6 +462,12 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     refreshFromApi(true);
     const interval = setInterval(() => refreshFromApi(false), 20000);
     return () => clearInterval(interval);
+  }, []);
+
+  // Reconcile pending requisitions on mount (catches any dropped during initial load)
+  useEffect(() => {
+    const timer = setTimeout(() => reconcilePendingRequisitions(), 500);
+    return () => clearTimeout(timer);
   }, []);
 
   // Re-sync local data to API whenever apiOnline becomes true
@@ -450,6 +505,10 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
         // Sync pending fuel requisitions
         const apiReqIds = new Set(apiReqs.map((r: any) => r.id));
+        // Clear queue for any returned by API
+        for (const id of getPendingReqIds()) {
+          if (apiReqIds.has(id)) removePendingReqId(id);
+        }
         for (const localReq of fuelRequisitions) {
           if (localReq.pendingSync && !apiReqIds.has(localReq.id)) {
             const { pendingSync, _syncedId, ...apiReq } = localReq;
@@ -971,12 +1030,14 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       localStorage.setItem('fc_requisitions', JSON.stringify(updated));
       return updated;
     });
+    addPendingReqId(newId);
 
     const attemptSave = async (reqToSave: FuelRequisition, isRetry = false) => {
       try {
         // Strip client-only fields before sending to API
         const { pendingSync, _syncedId, ...apiReq } = reqToSave;
         await api.saveFuelRequisition(apiReq);
+        removePendingReqId(reqToSave.id);
         if (reqToSave.pendingSync) {
           setFuelRequisitions(prev => prev.map(r => r.id === reqToSave.id ? { ...r, pendingSync: false } : r));
         }
