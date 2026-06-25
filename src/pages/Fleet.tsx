@@ -13,7 +13,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
 export const Fleet: React.FC = () => {
-  const { trucks, drivers, addTruck, updateTruck, updateTruckStatus, assignDriverToTruck, deleteTruck, branches, fuelLogs } = useFleet();
+  const { trucks, drivers, addTruck, updateTruck, updateTruckStatus, assignDriverToTruck, deleteTruck, branches, fuelLogs, fuelRequisitions } = useFleet();
 
   const [viewTab, setViewTab] = useState<'roster' | 'tracking'>('roster');
   const [search, setSearch] = useState('');
@@ -88,6 +88,13 @@ export const Fleet: React.FC = () => {
     if (totalDistance === 0) return { calculated: null, label: 'N/A' };
     const avg = (totalLitres / totalDistance) * 100;
     return { calculated: Math.round(avg * 10) / 10, label: `${Math.round(avg * 10) / 10} L/100km` };
+  };
+
+  const getLatestApprovedOdometer = (truck: Truck): number | null => {
+    const approved = fuelRequisitions
+      .filter(r => (r.status === 'Approved' || r.status === 'Redeemed') && r.truckPlate === truck.plateNumber && r.odometerReading)
+      .sort((a, b) => new Date(b.fuelDate).getTime() - new Date(a.fuelDate).getTime());
+    return approved.length > 0 ? approved[0].odometerReading! : null;
   };
 
   const isLightVehicle = (t: Truck) =>
@@ -561,18 +568,30 @@ export const Fleet: React.FC = () => {
                           <div className="grid grid-cols-2 gap-2 pt-2 border-t border-zinc-800/40 text-[10px] text-zinc-400 font-mono">
                             <div className="space-y-0.5 bg-zinc-950/20 p-1.5 rounded border border-zinc-900 shadow-xs">
                               <span className="text-zinc-550 block text-[8px] uppercase font-sans font-semibold">
-                                {isLightVehicle(t) ? 'Make / Model' : 'Odometer'}
+                                {isLightVehicle(t) ? 'Make / Model' : (() => {
+                                  const reqOdo = getLatestApprovedOdometer(t);
+                                  return reqOdo !== null ? 'Current Odo' : 'Odometer';
+                                })()}
                               </span>
                               <div className="flex items-center gap-1">
                                 {isLightVehicle(t) ? (
                                   <span className="font-bold text-zinc-200 text-[11px]">{t.model || '-'}</span>
                                 ) : (
-                                  <>
-                                    <span className="font-bold text-zinc-200 text-[11px]">{t.mileage.toLocaleString()} km</span>
-                                    {isOverdue && (
-                                      <span className="bg-red-500/20 text-red-400 border border-red-500/20 px-1 rounded text-[8px] font-bold" title="Service overdue">!</span>
-                                    )}
-                                  </>
+                                  (() => {
+                                    const reqOdo = getLatestApprovedOdometer(t);
+                                    const displayOdo = reqOdo !== null ? reqOdo : t.mileage;
+                                    return (
+                                      <>
+                                        <span className="font-bold text-zinc-200 text-[11px]">{displayOdo.toLocaleString()} km</span>
+                                        {reqOdo !== null && (
+                                          <span className="text-emerald-500" title="From approved fuel requisition">✓</span>
+                                        )}
+                                        {isOverdue && (
+                                          <span className="bg-red-500/20 text-red-400 border border-red-500/20 px-1 rounded text-[8px] font-bold" title="Service overdue">!</span>
+                                        )}
+                                      </>
+                                    );
+                                  })()
                                 )}
                               </div>
                             </div>
@@ -681,8 +700,17 @@ export const Fleet: React.FC = () => {
                   
                   <div className="bg-[#0b0f19] border border-zinc-850 p-4 rounded-lg space-y-3 font-mono text-zinc-400">
                     <div className="flex justify-between items-center">
-                      <span className="text-zinc-500 flex items-center gap-1.5"><Gauge size={13} /> Odometer Mileage:</span>
-                      <span className="text-zinc-200 font-bold font-mono">{selectedTruck.mileage.toLocaleString()} km</span>
+                      <span className="text-zinc-500 flex items-center gap-1.5"><Gauge size={13} /> {(() => {
+                        const reqOdo = getLatestApprovedOdometer(selectedTruck);
+                        return reqOdo !== null ? 'Current Odometer:' : 'Odometer Mileage:';
+                      })()}</span>
+                      <span className="text-zinc-200 font-bold font-mono flex items-center gap-1.5">
+                        {(() => {
+                          const reqOdo = getLatestApprovedOdometer(selectedTruck);
+                          const displayOdo = reqOdo !== null ? reqOdo : selectedTruck.mileage;
+                          return <>{displayOdo.toLocaleString()} km{reqOdo !== null && <span className="text-emerald-500 text-[10px]" title="From approved fuel requisition">✓</span>}</>;
+                        })()}
+                      </span>
                     </div>
 
                     {!isLightVehicle(selectedTruck) && (() => {

@@ -108,6 +108,9 @@ Production-harden FleetCommandSystem-v2.3 on `fleet.mineazy.co.zw` and deliver f
 7. **Race condition eliminated** — The combination of synchronous localStorage write, `pendingSync` tracking, initial-load merge, poll merge, online-transition sync, and immediate retry ensures a requisition can never disappear regardless of connectivity state (online, offline, intermittent)
 8. **Fixed 500 error on submission** — Client-only fields `pendingSync` and `_syncedId` were being sent to the server causing 500 errors; all 4 `saveFuelRequisition` call sites (immediate save, initial sync, poll retry, online sync) now strip these fields via destructuring before API calls
 
+### Completed — This Session (June 25, 2026) — Fleet Register Odometer Update
+1. **Fleet Register shows current odometer from approved requisitions** — Added `getLatestApprovedOdometer(truck)` helper in `Fleet.tsx` that finds the most recent approved/redeemed fuel requisition matching the truck's plate number and returns its `odometerReading`; falls back to `truck.mileage` if none found. Roster card label changes to "Current Odo" with a green checkmark when a requisition-sourced value is available. Telemetry panel also updated to show "Current Odometer:" with the same logic.
+
 ## Key Decisions
 - Settings PUT bypasses JWT auth so prepaid balance saves work without a token
 - Light vehicles reuse the `Truck` type with `category` column instead of a separate table
@@ -136,6 +139,7 @@ Production-harden FleetCommandSystem-v2.3 on `fleet.mineazy.co.zw` and deliver f
 - **Custom entries persisted in localStorage** — custom plates/drivers/branches stored under `fc_custom_plates`, `fc_custom_drivers`, `fc_custom_branches`; no API endpoint since these are UI convenience entries managed per-browser; custom drivers get auto-generated `custom-{timestamp}` IDs
 - **PaginatedTable default sort** — added `defaultSortKey`/`defaultSortDir` props for initial sort state; pre-sorting data before passing to table ensures newest-first display immediately; sort indicator shown on column header
 - **Requisition persistence via `pendingSync` flag** — every fuel requisition tracks sync state explicitly; synchronous localStorage write + async API save with exponential backoff retry (5s→10s); initial-load merge, 20s poll merge, and online-transition sync all preserve `pendingSync` records; all mutation functions (create, edit, review, approve, reject, redeem) use identical retry pattern with toast notifications; eliminates requisition loss under any connectivity scenario
+- **Fleet odometer from approved requisitions** — roster cards and telemetry panel on the Fleet page show the most recent odometer reading from approved/redeemed fuel requisitions for each truck (matched by plate number); falls back to `truck.mileage` when no requisition data exists; provides a green checkmark indicator when showing a requisition-sourced value
 
 ## Deployment (cPanel — fleet.mineazy.co.zw)
 
