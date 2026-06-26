@@ -389,7 +389,7 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
         for (const localReq of fuelRequisitions) {
           if (!apiReqIds.has(localReq.id)) {
-            const { pendingSync, _syncedId, ...apiReq } = localReq;
+            const { pendingSync, _syncedId, fillingStation, redeemedDrawdownVoucher, ...apiReq } = localReq;
             api.saveFuelRequisition(apiReq).catch((err) =>
               console.error('sync saveFuelRequisition failed:', err)
             );
@@ -427,7 +427,7 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         // Retry save for pendingSync records that are still missing from the API
         for (const local of pendingSyncLocal) {
           if (!apiReqIds.has(local.id)) {
-            const { pendingSync, _syncedId, ...apiReq } = local;
+            const { pendingSync, _syncedId, fillingStation, redeemedDrawdownVoucher, ...apiReq } = local;
             api.saveFuelRequisition(apiReq).catch(err =>
               console.error('poll retry saveFuelRequisition failed:', err)
             );
@@ -511,7 +511,7 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
         for (const localReq of fuelRequisitions) {
           if (localReq.pendingSync && !apiReqIds.has(localReq.id)) {
-            const { pendingSync, _syncedId, ...apiReq } = localReq;
+            const { pendingSync, _syncedId, fillingStation, redeemedDrawdownVoucher, ...apiReq } = localReq;
             api.saveFuelRequisition(apiReq).catch((err) => console.error('online sync saveFuelRequisition failed:', err));
           }
         }
@@ -1015,7 +1015,7 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const addFuelRequisition = (req: Omit<FuelRequisition, 'id' | 'status' | 'dateRequested'>) => {
-    const newId = `REQ-${Math.floor(300 + Math.random() * 100)}`;
+    const newId = `REQ-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
     const newReq: FuelRequisition = {
       ...req,
       id: newId,
@@ -1035,7 +1035,7 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const attemptSave = async (reqToSave: FuelRequisition, isRetry = false) => {
       try {
         // Strip client-only fields before sending to API
-        const { pendingSync, _syncedId, ...apiReq } = reqToSave;
+        const { pendingSync, _syncedId, fillingStation, redeemedDrawdownVoucher, ...apiReq } = reqToSave;
         await api.saveFuelRequisition(apiReq);
         removePendingReqId(reqToSave.id);
         if (reqToSave.pendingSync) {

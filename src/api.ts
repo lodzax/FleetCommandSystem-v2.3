@@ -41,7 +41,10 @@ async function request<T>(method: string, path: string, body?: any): Promise<T> 
     }
     throw new Error('Unauthorized');
   }
-  if (!res.ok) throw new Error(`API ${method} ${path} failed: ${res.status}`);
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`API ${method} ${path} failed: ${res.status}${body ? ' — ' + body : ''}`);
+  }
   return res.json();
 }
 
